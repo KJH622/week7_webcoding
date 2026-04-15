@@ -1,162 +1,367 @@
 use strict;
 use warnings;
-use IO::Socket::INET;
+
+use Cwd qw(abs_path);
+use File::Basename qw(dirname);
+use File::Path qw(make_path);
 use File::Spec;
-use FindBin qw($Bin);
+use IO::Socket::INET;
+use IPC::Open3;
+use JSON::PP qw(decode_json encode_json);
+use Symbol qw(gensym);
 
-# 우선순위: 커맨드라인 인수 > 환경변수 > 기본값
-my $port = $ARGV[0] || $ENV{PORT}     || 8000;
-my $root = $ARGV[1] || $ENV{WEB_ROOT} || File::Spec->catdir($Bin, '..');
+my $server_dir = dirname(abs_path(__FILE__));
+my $web_root = abs_path(File::Spec->catdir($server_dir, '..'));
+my $project_root = abs_path(File::Spec->catdir($web_root, '..'));
+my $results_path = File::Spec->catfile($web_root, 'assets', 'results.json');
+my $workspace_data_dir = File::Spec->catdir($project_root, 'data');
+my $current_csv_path = File::Spec->catfile($workspace_data_dir, 'players_1000000.csv');
+my $engine_pid;
+my $engine_in;
+my $engine_out;
+my $engine_err;
+my $engine_csv_path;
 
-# bin/search 바이너리 경로 (web/server/ 기준으로 두 단계 위 = 프로젝트 루트)
-my $search_bin = File::Spec->catfile($Bin, '..', '..', 'bin', 'search');
-
-my %types = (
-  html => 'text/html; charset=UTF-8',
-  css  => 'text/css; charset=UTF-8',
-  js   => 'application/javascript; charset=UTF-8',
-  json => 'application/json; charset=UTF-8',
-  png  => 'image/png',
-  jpg  => 'image/jpeg',
-  jpeg => 'image/jpeg',
-  svg  => 'image/svg+xml',
-  ico  => 'image/x-icon',
+my %mime_types = (
+    html => 'text/html; charset=utf-8',
+    css  => 'text/css; charset=utf-8',
+    js   => 'application/javascript; charset=utf-8',
+    json => 'application/json; charset=utf-8',
+    png  => 'image/png',
+    jpg  => 'image/jpeg',
+    jpeg => 'image/jpeg',
+    svg  => 'image/svg+xml',
 );
 
-my $server = IO::Socket::INET->new(
-  LocalAddr => '0.0.0.0',
-  LocalPort => $port,
-  Proto     => 'tcp',
-  Listen    => 5,
-  Reuse     => 1,
-) or die "server start failed on port $port: $!\n";
+sub executable_path {
+    my ($base_path) = @_;
+    my @candidates = ($base_path, "$base_path.exe");
 
-print "Serving $root at http://127.0.0.1:$port\n";
-print "Search API: http://127.0.0.1:$port/search\n";
+    if ($^O eq 'MSWin32') {
+        @candidates = ("$base_path.exe", $base_path);
+    }
 
-# 쿼리 파라미터 파싱
-sub parse_query {
-  my ($qs) = @_;
-  my %q;
-  for my $pair (split /&/, $qs // '') {
-    my ($k, $v) = split /=/, $pair, 2;
-    next unless defined $k && defined $v;
-    $v =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
-    $q{$k} = $v;
-  }
-  return %q;
+    for my $candidate (@candidates) {
+        return $candidate if -f $candidate;
+    }
+
+    return $base_path;
 }
 
-# JSON 응답 전송
+sub ensure_workspace_data_dir {
+    eval { make_path($workspace_data_dir) if !-d $workspace_data_dir; 1; } or return undef;
+    return $workspace_data_dir if -d $workspace_data_dir && -w $workspace_data_dir;
+    return undef;
+}
+
+sub send_response {
+    my ($client, $status, $content_type, $body) = @_;
+    my $length = length($body);
+
+    print $client "HTTP/1.1 $status\r\n";
+    print $client "Content-Type: $content_type\r\n";
+    print $client "Content-Length: $length\r\n";
+    print $client "Connection: close\r\n";
+    print $client "Cache-Control: no-store\r\n";
+    print $client "\r\n";
+    print $client $body;
+}
+
 sub send_json {
-  my ($client, $body) = @_;
-  print $client
-    "HTTP/1.1 200 OK\r\n" .
-    "Content-Type: application/json; charset=UTF-8\r\n" .
-    "Access-Control-Allow-Origin: *\r\n" .
-    "Content-Length: " . length($body) . "\r\n" .
-    "Connection: close\r\n\r\n" .
-    $body;
+    my ($client, $status, $payload) = @_;
+    send_response($client, $status, 'application/json; charset=utf-8', encode_json($payload));
 }
 
-while (my $client = $server->accept()) {
-  $client->recv(my $request, 4096);
-  my ($method, $full_path) = $request =~ m{^(GET)\s+([^\s]+)};
+sub parse_query_string {
+    my ($query) = @_;
+    my %params;
 
-  if (!$method) {
-    close $client;
-    next;
-  }
+    return %params if !defined $query || $query eq q{};
 
-  # 경로와 쿼리 분리
-  my ($path, $qs) = split /\?/, $full_path, 2;
-
-  # ── /search 엔드포인트 ──────────────────────────────
-  if ($path eq '/search') {
-    my %q = parse_query($qs);
-
-    my $mode = $q{mode} // 'single';
-    my $size = $q{size} // '1000000';
-
-    # 파라미터 검증 (숫자·알파벳만 허용, 인젝션 방지)
-    unless ($mode =~ /^(single|range)$/ && $size =~ /^\d{1,8}$/) {
-      send_json($client, '{"error":"invalid params"}');
-      close $client;
-      next;
+    for my $pair (split /&/, $query) {
+        my ($key, $value) = split /=/, $pair, 2;
+        next if !defined $key;
+        $value = '' if !defined $value;
+        $key =~ tr/+/ /;
+        $value =~ tr/+/ /;
+        $key =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
+        $value =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
+        $params{$key} = $value;
     }
 
-    # bin/search 바이너리 존재 확인
-    unless (-f $search_bin && -x $search_bin) {
-      send_json($client, '{"error":"search binary not found — make search 실행 필요"}');
-      close $client;
-      next;
-    }
+    return %params;
+}
 
-    my $cmd;
-    if ($mode eq 'single') {
-      my $target = $q{target} // int($size / 2);
-      $target =~ s/[^\d]//g;
-      $target ||= int($size / 2);
-      $cmd = "$search_bin single $size $target";
-    } else {
-      my $lo = $q{lo} // '1';
-      my $hi = $q{hi} // int($size * 0.01);
-      $lo =~ s/[^\d]//g;
-      $hi =~ s/[^\d]//g;
-      $lo ||= 1;
-      $hi ||= int($size * 0.01);
-      $cmd = "$search_bin range $size $lo $hi";
-    }
-
-    # 실행 (최대 60초 타임아웃)
-    my $json = '';
+sub run_command {
+    my ($program, @args) = @_;
+    my $stderr = gensym;
+    my $pid;
+    my $stdout;
     eval {
-      local $SIG{ALRM} = sub { die "timeout\n" };
-      alarm(60);
-      $json = qx{$cmd 2>/dev/null};
-      alarm(0);
+        $pid = open3(undef, $stdout, $stderr, $program, @args);
+        1;
+    } or do {
+        my $error = $@ || 'unknown process start error';
+        return (1, "failed to start $program: $error");
     };
-    if ($@) {
-      $json = '{"error":"timeout — 데이터셋이 너무 큽니다"}';
+    my $output = do {
+        local $/;
+        (<$stdout> // q{}) . (<$stderr> // q{});
+    };
+
+    waitpid($pid, 0);
+    my $exit_code = $? >> 8;
+    return ($exit_code, $output);
+}
+
+sub stop_query_engine {
+    if ($engine_in) {
+        print {$engine_in} "quit\n";
+        close $engine_in;
+        $engine_in = undef;
     }
-    $json ||= '{"error":"search 실행 실패"}';
+    close $engine_out if $engine_out;
+    close $engine_err if $engine_err;
+    if ($engine_pid) {
+        waitpid($engine_pid, 0);
+    }
 
-    send_json($client, $json);
-    close $client;
-    next;
-  }
+    $engine_pid = undef;
+    $engine_out = undef;
+    $engine_err = undef;
+    $engine_csv_path = undef;
+}
 
-  # ── 정적 파일 서빙 ──────────────────────────────────
-  $path = '/' if !$path || $path eq '';
-  $path = '/index.html' if $path eq '/';
-  $path =~ s/%20/ /g;
-  $path =~ s#\.\.##g;
+sub start_query_engine {
+    my ($csv_path) = @_;
+    my $query_server = executable_path(File::Spec->catfile($project_root, 'bin', 'query_server'));
+    my $stderr = gensym;
+    my $pid;
+    my $stdout;
+    my $stdin;
+    my $ready_line;
+    my $ready_payload;
 
-  my $file = File::Spec->catfile($root, $path =~ s{^/}{}r);
+    stop_query_engine();
 
-  if (-d $file) {
-    $file = File::Spec->catfile($file, 'index.html');
-  }
-
-  if (-f $file) {
-    open my $fh, '<', $file or do {
-      print $client "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
-      close $client;
-      next;
+    eval {
+        $pid = open3($stdin, $stdout, $stderr, $query_server, $csv_path);
+        1;
+    } or do {
+        my $error = $@ || 'unknown query server start error';
+        return (0, "failed to start query server: $error");
     };
+
+    $ready_line = <$stdout>;
+    if (!defined $ready_line) {
+        local $/;
+        my $stderr_text = <$stderr> // q{};
+        waitpid($pid, 0);
+        return (0, "query server did not start: $stderr_text");
+    }
+
+    eval { $ready_payload = decode_json($ready_line); 1 } or do {
+        local $/;
+        my $stderr_text = <$stderr> // q{};
+        waitpid($pid, 0);
+        return (0, "query server returned invalid startup payload: $ready_line $stderr_text");
+    };
+
+    if (!$ready_payload->{ok} || !$ready_payload->{ready}) {
+        local $/;
+        my $stderr_text = <$stderr> // q{};
+        waitpid($pid, 0);
+        return (0, "query server failed to initialize: $stderr_text");
+    }
+
+    $engine_pid = $pid;
+    $engine_in = $stdin;
+    $engine_out = $stdout;
+    $engine_err = $stderr;
+    $engine_csv_path = $csv_path;
+    return (1, undef);
+}
+
+sub ensure_query_engine {
+    my ($csv_path) = @_;
+
+    if ($engine_pid && $engine_csv_path && $engine_csv_path eq $csv_path) {
+        return (1, undef);
+    }
+
+    return start_query_engine($csv_path);
+}
+
+sub handle_generate {
+    my ($client, $query) = @_;
+    my %params = parse_query_string($query);
+    my $count = $params{count} // 1_000_000;
+    my $csv_path;
+    my $datagen = executable_path(File::Spec->catfile($project_root, 'bin', 'datagen'));
+    my $bench = executable_path(File::Spec->catfile($project_root, 'bin', 'bench'));
+    my ($exit_code, $output);
+
+    if ($count !~ /^\d+$/ || $count <= 0) {
+        return send_json($client, '400 Bad Request', {
+            ok => JSON::PP::false,
+            message => 'count must be a positive integer'
+        });
+    }
+
+    my $data_dir = ensure_workspace_data_dir();
+    if (!$data_dir) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => "failed to prepare writable data directory: $workspace_data_dir"
+        });
+    }
+
+    $csv_path = File::Spec->catfile($data_dir, "players_${count}.csv");
+
+    # If a previous container/user created a read-only file at the same path,
+    # remove it first so datagen can recreate it under the current user.
+    unlink $csv_path if -e $csv_path;
+
+    ($exit_code, $output) = run_command($datagen, $count, $csv_path);
+    if ($exit_code != 0) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => "failed to generate csv data: $output",
+            error => $output
+        });
+    }
+
+    ($exit_code, $output) = run_command($bench, $csv_path, $results_path);
+
+    if ($exit_code != 0) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => "failed to generate benchmark data: $output",
+            error => $output
+        });
+    }
+
+    $current_csv_path = $csv_path;
+    my ($ok, $engine_error) = ensure_query_engine($current_csv_path);
+    if (!$ok) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => $engine_error
+        });
+    }
+
+    return send_json($client, '200 OK', {
+        ok => JSON::PP::true,
+        dataset_size => int($count),
+        csv_path => $current_csv_path,
+        message => 'Generated CSV data and benchmark successfully.'
+    });
+}
+
+sub handle_search {
+    my ($client, $query) = @_;
+    my %params = parse_query_string($query);
+    my $target_id = $params{id};
+    my $query_demo = executable_path(File::Spec->catfile($project_root, 'bin', 'query_demo'));
+    my ($exit_code, $output);
+    my $payload;
+
+    if (!defined $target_id || $target_id !~ /^\d+$/ || $target_id <= 0) {
+        return send_json($client, '400 Bad Request', {
+            ok => JSON::PP::false,
+            message => 'id must be a positive integer'
+        });
+    }
+
+    if (!-f $current_csv_path) {
+        return send_json($client, '400 Bad Request', {
+            ok => JSON::PP::false,
+            message => 'csv data has not been generated yet'
+        });
+    }
+
+    my ($ok, $engine_error) = ensure_query_engine($current_csv_path);
+    if (!$ok) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => $engine_error
+        });
+    }
+
+    print {$engine_in} "search $target_id\n";
+    $output = <$engine_out>;
+    if (!defined $output) {
+        local $/;
+        my $stderr_text = $engine_err ? (<$engine_err> // q{}) : q{};
+        stop_query_engine();
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => "query server connection closed unexpectedly: $stderr_text"
+        });
+    }
+
+    eval { $payload = decode_json($output); 1 } or do {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => 'search returned invalid JSON',
+            error => $output
+        });
+    };
+
+    return send_json($client, '200 OK', $payload);
+}
+
+sub serve_static {
+    my ($client, $path) = @_;
+    my $relative = $path eq '/' ? 'index.html' : substr($path, 1);
+    my $file = abs_path(File::Spec->catfile($web_root, split m{/}, $relative));
+
+    if (!$file || index($file, $web_root) != 0 || !-f $file) {
+        return send_response($client, '404 Not Found', 'text/plain; charset=utf-8', '404 Not Found');
+    }
+
+    open my $fh, '<', $file or return send_response($client, '500 Internal Server Error', 'text/plain; charset=utf-8', 'failed to open file');
     binmode $fh;
     local $/;
     my $body = <$fh>;
     close $fh;
 
     my ($ext) = $file =~ /\.([^.]+)$/;
-    my $type = $types{lc($ext // '')} // 'application/octet-stream';
-    print $client "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: " . length($body) . "\r\nConnection: close\r\n\r\n";
-    print $client $body;
-  } else {
-    my $body = "404 Not Found\n";
-    print $client "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Length: " . length($body) . "\r\nConnection: close\r\n\r\n$body";
-  }
+    my $content_type = $mime_types{lc($ext // q{})} || 'application/octet-stream';
+    return send_response($client, '200 OK', $content_type, $body);
+}
 
-  close $client;
+my $server = IO::Socket::INET->new(
+    LocalAddr => '0.0.0.0',
+    LocalPort => 8000,
+    Proto     => 'tcp',
+    Listen    => 10,
+    Reuse     => 1,
+) or die "failed to bind server: $!";
+
+print "Serving $web_root at http://0.0.0.0:8000\n";
+
+while (my $client = $server->accept()) {
+    my $request_line = <$client>;
+    my ($method, $full_path) = split /\s+/, ($request_line // q{});
+    my ($path, $query) = split /\?/, ($full_path // '/'), 2;
+
+    while (my $line = <$client>) {
+        last if $line =~ /^\s*$/;
+    }
+
+    $path =~ s{//+}{/}g;
+    $path =~ s{/$}{} if $path ne '/';
+
+    if (!defined $method || $method ne 'GET') {
+        send_response($client, '405 Method Not Allowed', 'text/plain; charset=utf-8', 'Method Not Allowed');
+    } elsif ($path eq '/api/generate') {
+        handle_generate($client, $query);
+    } elsif ($path eq '/api/search') {
+        handle_search($client, $query);
+    } else {
+        serve_static($client, $path);
+    }
+
+    close $client;
 }

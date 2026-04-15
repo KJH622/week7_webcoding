@@ -188,7 +188,6 @@ button, select, input {
   margin-top: 18px;
 }
 
-
 .select-wrap select,
 .id-input,
 .mode-tab,
@@ -197,8 +196,6 @@ button, select, input {
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(35, 34, 32, 0.72);
 }
-
-
 
 .select-wrap {
   width: 100%;
@@ -212,7 +209,6 @@ button, select, input {
   appearance: none;
 }
 
-/* 체크박스 우측: select + id-input 세로 배치 */
 .control-right {
   flex: 1;
   display: flex;
@@ -226,7 +222,6 @@ button, select, input {
   flex-wrap: wrap;
 }
 
-/* 단일 탐색 ID 입력 박스 — select와 동일한 스타일 */
 .id-input-wrap {
   width: 100%;
 }
@@ -260,12 +255,12 @@ button, select, input {
   box-shadow: 0 0 0 1px rgba(125, 115, 231, 0.25);
 }
 
-/* 숫자 스피너 제거 */
 .id-input::-webkit-outer-spin-button,
 .id-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
 .id-input[type=number] {
   -moz-appearance: textfield;
 }
