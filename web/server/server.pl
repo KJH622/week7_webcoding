@@ -449,14 +449,14 @@ sub serve_static {
 }
 
 my $server = IO::Socket::INET->new(
-    LocalAddr => '0.0.0.0',
+    LocalAddr => '127.0.0.1',
     LocalPort => 8000,
     Proto     => 'tcp',
     Listen    => 10,
     Reuse     => 1,
 ) or die "failed to bind server: $!";
 
-print "Serving $web_root at http://0.0.0.0:8000\n";
+print "Serving $web_root at http://127.0.0.1:8000\n";
 
 while (my $client = $server->accept()) {
     my $request_line = <$client>;
