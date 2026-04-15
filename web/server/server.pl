@@ -2,8 +2,10 @@ use strict;
 use warnings;
 use IO::Socket::INET;
 use File::Spec;
+use FindBin qw($Bin);
 
-my $root = '/workspaces/week7_webcoding/web';
+# 스크립트 위치(web/server/)의 상위 디렉터리(web/)를 루트로 설정
+my $root = File::Spec->catdir($Bin, '..');
 my $port = 8000;
 
 my %types = (
