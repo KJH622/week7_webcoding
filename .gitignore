@@ -6,6 +6,3 @@ data/*.csv
 assets/results/
 .DS_Store
 # Local-only agent handoff/work logs
-docs/*.md
-!docs/knowledge.md
-docs/agent-work-log.md
