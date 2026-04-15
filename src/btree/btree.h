@@ -1,7 +1,7 @@
 #ifndef BTREE_H
 #define BTREE_H
 
-#define BT_ORDER 4   /* 노드당 최대 키 수 */
+#define BT_ORDER 32  /* 노드당 최대 키 수. 100만 건 기준 트리 높이 ~4 레벨 */
 
 typedef struct BTNode {
     int            keys[BT_ORDER];
