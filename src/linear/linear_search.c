@@ -27,12 +27,14 @@ Player *linear_search_name(Player *table, int size, const char *target_name) {
     return NULL;
 }
 
+/* 전제: table은 id 오름차순으로 정렬되어 있어야 함 (datagen 보장).
+ * id > hi 시점에 조기 탈출하여 O(hi) 비교로 단축. */
 int linear_range(Player *table, int size, int lo, int hi) {
     int count = 0;
     for (int i = 0; i < size; i++) {
         g_op_count++;                      /* 비교 1회 */
-        if (table[i].id >= lo && table[i].id <= hi)
-            count++;
+        if (table[i].id > hi) break;       /* 정렬 보장 → 이후는 모두 범위 초과 */
+        if (table[i].id >= lo) count++;
     }
     return count;
 }
