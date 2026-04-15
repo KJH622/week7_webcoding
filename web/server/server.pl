@@ -4,9 +4,9 @@ use IO::Socket::INET;
 use File::Spec;
 use FindBin qw($Bin);
 
-# 스크립트 위치(web/server/)의 상위 디렉터리(web/)를 루트로 설정
-my $root = File::Spec->catdir($Bin, '..');
-my $port = 8000;
+# 우선순위: 커맨드라인 인수 > 환경변수 > 기본값
+my $port = $ARGV[0] || $ENV{PORT}     || 8000;
+my $root = $ARGV[1] || $ENV{WEB_ROOT} || File::Spec->catdir($Bin, '..');
 
 my %types = (
   html => 'text/html; charset=UTF-8',
