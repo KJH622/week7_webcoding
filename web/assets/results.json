@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "generated_at": "",
+    "dataset_size": 0,
+    "iterations": 5
+  },
+  "single_search": {
+    "target_id": 0,
+    "linear":  { "avg_us": 0, "ops": 0 },
+    "btree":   { "avg_us": 0, "ops": 0 },
+    "bptree":  { "avg_us": 0, "ops": 0 }
+  },
+  "range_search": {
+    "lo": 0,
+    "hi": 0,
+    "count": 0,
+    "linear":  { "avg_us": 0, "ops": 0 },
+    "btree":   { "avg_us": 0, "ops": 0 },
+    "bptree":  { "avg_us": 0, "ops": 0 }
+  }
+}

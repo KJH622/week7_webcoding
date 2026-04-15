@@ -3,7 +3,7 @@ use warnings;
 use IO::Socket::INET;
 use File::Spec;
 
-my $root = '/workspaces/week7_webcoding/gamerank-db/demo';
+my $root = '/workspaces/week7_webcoding/web';
 my $port = 8000;
 
 my %types = (

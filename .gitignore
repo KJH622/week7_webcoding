@@ -5,3 +5,5 @@ bin/
 data/*.csv
 assets/results/
 .DS_Store
+docs/*.md
+!docs/knowledge.md
