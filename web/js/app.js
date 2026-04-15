@@ -7,6 +7,12 @@ const targetIdInput  = document.getElementById("target-id");
 const rangeInputWrap = document.getElementById("range-input-wrap");
 const rangeLoInput   = document.getElementById("range-lo");
 const rangeHiInput   = document.getElementById("range-hi");
+const paginationEls = {
+  wrap: document.getElementById("table-pagination"),
+  prev: document.getElementById("page-prev"),
+  next: document.getElementById("page-next"),
+  info: document.getElementById("page-info"),
+};
 
 const summaryEls = {
   count: document.getElementById("player-count"),
@@ -34,6 +40,9 @@ const apiBase = new URL("./", window.location.href);
 
 let currentMode = "single";
 let benchmarkData = null;
+let currentRangeState = null;
+
+const RANGE_PAGE_SIZE = 10;
 
 function buildUrl(path) {
   return new URL(path, apiBase).toString();
@@ -183,7 +192,7 @@ function setProgressBars(values) {
 function renderRows(rows) {
   rankingBody.innerHTML = rows.map((player, index) => `
     <tr>
-      <td>${index + 1}</td>
+      <td>${player.rowNumber || index + 1}</td>
       <td>#${formatNumber(player.id)}</td>
       <td>
         <div class="player-name">
@@ -197,19 +206,53 @@ function renderRows(rows) {
   `).join("");
 }
 
+function hidePagination() {
+  paginationEls.wrap.hidden = true;
+  paginationEls.prev.disabled = true;
+  paginationEls.next.disabled = true;
+  paginationEls.info.textContent = "";
+}
+
+function showRangePagination(data) {
+  paginationEls.wrap.hidden = false;
+  paginationEls.prev.disabled = !data.pageCount || data.page <= 1;
+  paginationEls.next.disabled = !data.pageCount || data.page >= data.pageCount;
+
+  if (!data.totalItems) {
+    paginationEls.info.textContent = "범위 탐색 결과 없음";
+    return;
+  }
+
+  paginationEls.info.textContent = `${formatNumber(data.page)} / ${formatNumber(data.pageCount)} 페이지 · 총 ${formatNumber(data.totalItems)}건`;
+}
+
+function setPaginationLoading() {
+  paginationEls.wrap.hidden = false;
+  paginationEls.prev.disabled = true;
+  paginationEls.next.disabled = true;
+  paginationEls.info.textContent = "페이지 로드 중...";
+}
+
 function renderTopPlayers(players) {
   const rows = (players || []).map((player, index) => ({
     ...player,
+    rowNumber: index + 1,
     width: 76 + ((10 - index) * 6),
   }));
 
   renderRows(rows);
   summaryEls.tableSubtitle.textContent = "상위 10명 샘플";
   summaryEls.lastSearch.textContent = "TOP 10 Ranking";
+  hidePagination();
 }
 
 function renderRange(benchmark) {
   const range = benchmark.range_search;
+  const sampleRows = (benchmark.top_players || []).map((player, index) => ({
+    ...player,
+    rowNumber: index + 1,
+    width: 76 + ((10 - index) * 6),
+  }));
 
   resultEls.linearTime.textContent = formatTimeUs(range.linear.avg_us);
   resultEls.btreeTime.textContent = formatTimeUs(range.btree.avg_us);
@@ -230,12 +273,13 @@ function renderRange(benchmark) {
   });
 
   summaryEls.lastSearch.textContent = `ID #${formatNumber(range.lo)} ~ ${formatNumber(range.hi)}`;
-  summaryEls.tableSubtitle.textContent = "범위 탐색 기준 상위 10명 샘플";
-  renderTopPlayers(benchmark.top_players);
+  summaryEls.tableSubtitle.textContent = "범위 탐색 실시간 결과를 불러오지 못해 상위 10명 샘플을 표시 중";
+  renderRows(sampleRows);
+  hidePagination();
 }
 
 // 실시간 범위 탐색 결과 렌더링 (/api/range 응답 전용)
-function renderRangeRealtime(data, benchmark) {
+function renderRangeRealtime(data) {
   resultEls.linearTime.textContent  = formatTimeUs(data.linear_time);
   resultEls.btreeTime.textContent   = formatTimeUs(data.btree_time);
   resultEls.bptreeTime.textContent  = formatTimeUs(data.bptree_time);
@@ -256,9 +300,32 @@ function renderRangeRealtime(data, benchmark) {
     bptree: data.bptree_time,
   });
 
-  renderTopPlayers(benchmark.top_players);
-  summaryEls.lastSearch.textContent    = `ID #${lo} ~ ${hi}`;
-  summaryEls.tableSubtitle.textContent = `범위 탐색 기준 상위 10명 샘플 (${formatNumber(data.size)}건)`;
+  if ((data.players || []).length > 0) {
+    const startIndex = ((data.page - 1) * data.page_size) + 1;
+    const rows = data.players.map((player, index) => ({
+      ...player,
+      rowNumber: startIndex + index,
+      width: 92,
+    }));
+    const endIndex = startIndex + rows.length - 1;
+
+    renderRows(rows);
+    summaryEls.tableSubtitle.textContent = `범위 탐색 결과 ${formatNumber(startIndex)}-${formatNumber(endIndex)} / ${formatNumber(data.range_count)}건`;
+  } else {
+    rankingBody.innerHTML = `
+      <tr>
+        <td colspan="5">ID #${lo} ~ ${hi} 범위에 해당하는 플레이어가 없습니다.</td>
+      </tr>
+    `;
+    summaryEls.tableSubtitle.textContent = "범위 탐색 결과 없음";
+  }
+
+  summaryEls.lastSearch.textContent = `ID #${lo} ~ ${hi}`;
+  showRangePagination({
+    page: data.page,
+    pageCount: data.page_count,
+    totalItems: data.range_count,
+  });
 }
 
 function renderSingle(payload, benchmark) {
@@ -298,6 +365,8 @@ function renderSingle(payload, benchmark) {
       </tr>
     `;
   }
+
+  hidePagination();
 }
 
 function renderTop10Realtime(data) {
@@ -322,6 +391,34 @@ function renderTop10Realtime(data) {
   renderTopPlayers(data.top_players || []);
   summaryEls.lastSearch.textContent = "TOP 10 Ranking";
   summaryEls.tableSubtitle.textContent = `실시간 TOP 10 랭킹 (${formatNumber(data.top_count || 0)}명)`;
+  hidePagination();
+}
+
+async function loadRangePage(page, benchmark = null) {
+  if (!currentRangeState) {
+    return null;
+  }
+
+  setPaginationLoading();
+
+  const rangePayload = await fetchJson(
+    buildUrl(`api/range?lo=${currentRangeState.lo}&hi=${currentRangeState.hi}&count=${currentRangeState.count}&page=${page}&page_size=${currentRangeState.pageSize}`),
+    "범위 탐색 실패"
+  );
+
+  if (!rangePayload.ok) {
+    if (benchmark) {
+      currentRangeState = null;
+      renderRange(benchmark);
+      return null;
+    }
+
+    throw new Error(rangePayload.message || "범위 탐색 실패");
+  }
+
+  currentRangeState.page = rangePayload.page;
+  renderRangeRealtime(rangePayload);
+  return rangePayload;
 }
 
 async function runCurrentMode() {
@@ -332,6 +429,7 @@ async function runCurrentMode() {
     const benchmark = await ensureDataset(count);
 
     if (currentMode === "single") {
+      currentRangeState = null;
       const targetId = getTargetId();
       runButton.textContent = "탐색 실행 중...";
       const payload = await fetchJson(buildUrl(`api/search?id=${targetId}`), "검색 실패");
@@ -342,17 +440,16 @@ async function runCurrentMode() {
     } else if (currentMode === "range") {
       const { lo, hi } = getRangeBounds();
       runButton.textContent = "탐색 실행 중...";
-      const rangePayload = await fetchJson(
-        buildUrl(`api/range?lo=${lo}&hi=${hi}&count=${count}`),
-        "범위 탐색 실패"
-      );
-      if (!rangePayload.ok) {
-        // 실시간 실패 시 사전 측정값으로 폴백
-        renderRange(benchmark);
-      } else {
-        renderRangeRealtime(rangePayload, benchmark);
-      }
+      currentRangeState = {
+        lo,
+        hi,
+        count,
+        page: 1,
+        pageSize: RANGE_PAGE_SIZE,
+      };
+      await loadRangePage(1, benchmark);
     } else {
+      currentRangeState = null;
       runButton.textContent = "TOP 10 집계 중...";
       const topPayload = await fetchJson(
         buildUrl(`api/top?count=${count}`),
@@ -375,11 +472,18 @@ modeTabs.forEach((button) => {
     currentMode = button.dataset.mode;
     modeTabs.forEach((tab) => tab.classList.toggle("active", tab === button));
     updateIdInputVisibility();
+
+    if (currentMode !== "range") {
+      currentRangeState = null;
+      hidePagination();
+    }
   });
 });
 
 datasetSize.addEventListener("change", () => {
   updateSummary(datasetSize.value);
+  currentRangeState = null;
+  hidePagination();
 });
 
 runButton.addEventListener("click", runCurrentMode);
@@ -401,8 +505,33 @@ rangeHiInput.addEventListener("keydown", (event) => {
   }
 });
 
+paginationEls.prev.addEventListener("click", async () => {
+  if (!currentRangeState || currentRangeState.page <= 1) {
+    return;
+  }
+
+  try {
+    await loadRangePage(currentRangeState.page - 1);
+  } catch (error) {
+    window.alert(error.message || "페이지 이동 중 오류가 발생했습니다.");
+  }
+});
+
+paginationEls.next.addEventListener("click", async () => {
+  if (!currentRangeState) {
+    return;
+  }
+
+  try {
+    await loadRangePage(currentRangeState.page + 1);
+  } catch (error) {
+    window.alert(error.message || "페이지 이동 중 오류가 발생했습니다.");
+  }
+});
+
 updateIdInputVisibility();
 updateSummary(datasetSize.value);
+hidePagination();
 renderRows([
   { id: 91823, nickname: "ShadowBlade", win_rate: 94.72, rank: "챌린저", width: 120 },
   { id: 445221, nickname: "NightFury", win_rate: 92.48, rank: "챌린저", width: 110 },

@@ -75,6 +75,22 @@ static int write_top_fixture_csv(const char *path) {
     return fclose(fp) == 0;
 }
 
+static int write_range_fixture_csv(const char *path) {
+    FILE *fp = fopen(path, "w");
+    int i;
+
+    if (!fp) {
+        return 0;
+    }
+
+    fprintf(fp, "id,닉네임,승률(%%),랭크\n");
+    for (i = 1; i <= 30; ++i) {
+        fprintf(fp, "%d,Player_%02d,%.2f,골드\n", i, i, 50.0 + (i % 10));
+    }
+
+    return fclose(fp) == 0;
+}
+
 static char *read_text_file(const char *path) {
     FILE *fp = fopen(path, "rb");
     char *buffer;
@@ -391,6 +407,51 @@ static void test_query_server_top10_realtime(void) {
     remove(output_path);
 }
 
+static void test_query_server_range_pagination(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[384];
+    char *output = NULL;
+    char *first_item;
+    char *last_item;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[query_server range pagination]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "query_server_range_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "query_server_range_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'range 5 24 2 10\\nquit\\n' | ./bin/query_server %s > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    first_item = output ? strstr(output, "\"id\":15") : NULL;
+    last_item = output ? strstr(output, "\"id\":24") : NULL;
+
+    CHECK(wrote_fixture, "fixture csv created for query_server range pagination");
+    CHECK(ran_command, "query_server range pagination command runs against fixture");
+    CHECK(output && strstr(output, "\"range_count\":20") != NULL, "query_server range pagination reports total match count");
+    CHECK(output && strstr(output, "\"page\":2") != NULL, "query_server range pagination reports current page");
+    CHECK(output && strstr(output, "\"page_count\":2") != NULL, "query_server range pagination reports total pages");
+    CHECK(first_item && last_item && first_item < last_item, "query_server range pagination returns second page rows");
+    CHECK(output && strstr(output, "\"id\":5") == NULL, "query_server range pagination excludes first page rows");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
 static void test_bptree_single_search(void) {
     Player players[3];
     BPTree *tree = bptree_create();
@@ -474,6 +535,7 @@ int main(void) {
     test_query_server_json_escaping();
     test_bench_json_escaping();
     test_query_server_top10_realtime();
+    test_query_server_range_pagination();
     test_bptree_single_search();
     test_bptree_range_search();
     test_bptree_split_handling();

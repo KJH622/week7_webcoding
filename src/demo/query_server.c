@@ -13,6 +13,8 @@
 
 #define SEARCH_ITERS 5
 #define TOP_LIMIT 10
+#define DEFAULT_PAGE_SIZE 10
+#define MAX_PAGE_SIZE 50
 
 long long g_op_count = 0;
 
@@ -65,6 +67,28 @@ static void print_json_string(FILE *out, const char *text) {
         cursor++;
     }
     fputc('"', out);
+}
+
+static void print_player_json(Player *player) {
+    printf("{");
+    printf("\"id\":%d,", player->id);
+    printf("\"nickname\":");
+    print_json_string(stdout, player->name);
+    printf(",");
+    printf("\"win_rate\":%.2f,", player->win_rate);
+    printf("\"rank\":");
+    print_json_string(stdout, player->rank);
+    printf("}");
+}
+
+static int normalize_page_size(int page_size) {
+    if (page_size <= 0) {
+        return DEFAULT_PAGE_SIZE;
+    }
+    if (page_size > MAX_PAGE_SIZE) {
+        return MAX_PAGE_SIZE;
+    }
+    return page_size;
 }
 
 static int player_better(const Player *candidate, const Player *current) {
@@ -195,21 +219,11 @@ static void print_top_players_json(const TopPlayers *top) {
 
     printf("[");
     for (i = 0; i < top->count; ++i) {
-        Player *player = top->items[i];
-
         if (i > 0) {
             printf(",");
         }
 
-        printf("{");
-        printf("\"id\":%d,", player->id);
-        printf("\"nickname\":");
-        print_json_string(stdout, player->name);
-        printf(",");
-        printf("\"win_rate\":%.2f,", player->win_rate);
-        printf("\"rank\":");
-        print_json_string(stdout, player->rank);
-        printf("}");
+        print_player_json(top->items[i]);
     }
     printf("]");
 }
@@ -268,14 +282,7 @@ static void print_search_result(Player *players, int count, BTree *btree, BPTree
 
     if (linear_found && btree_found && bptree_found) {
         printf("\"player\":{");
-        printf("\"id\":%d,", linear_found->id);
-        printf("\"nickname\":");
-        print_json_string(stdout, linear_found->name);
-        printf(",");
-        printf("\"win_rate\":%.2f,", linear_found->win_rate);
-        printf("\"rank\":");
-        print_json_string(stdout, linear_found->rank);
-        printf("}");
+        print_player_json(linear_found);
     } else {
         printf("\"player\":null");
     }
@@ -284,7 +291,60 @@ static void print_search_result(Player *players, int count, BTree *btree, BPTree
     fflush(stdout);
 }
 
-static void print_range_result(Player *players, int count, BTree *btree, BPTree *bptree, int lo, int hi) {
+static int collect_range_page(
+    Player *players,
+    int count,
+    int lo,
+    int hi,
+    int offset,
+    int page_size,
+    Player **page_players
+) {
+    int matched = 0;
+    int page_count = 0;
+    int i;
+
+    for (i = 0; i < count; ++i) {
+        if (players[i].id < lo || players[i].id > hi) {
+            continue;
+        }
+
+        if (matched >= offset && page_count < page_size) {
+            page_players[page_count++] = &players[i];
+        }
+
+        matched += 1;
+        if (page_count == page_size) {
+            continue;
+        }
+    }
+
+    return page_count;
+}
+
+static void print_range_players_json(Player **page_players, int page_items) {
+    int i;
+
+    printf("[");
+    for (i = 0; i < page_items; ++i) {
+        if (i > 0) {
+            printf(",");
+        }
+        print_player_json(page_players[i]);
+    }
+    printf("]");
+}
+
+static void print_range_result(
+    Player *players,
+    int count,
+    BTree *btree,
+    BPTree *bptree,
+    int lo,
+    int hi,
+    int requested_page,
+    int requested_page_size
+) {
     int linear_count = 0;
     int btree_count = 0;
     int bptree_count = 0;
@@ -294,6 +354,12 @@ static void print_range_result(Player *players, int count, BTree *btree, BPTree 
     long long linear_ops_total = 0;
     long long btree_ops_total = 0;
     long long bptree_ops_total = 0;
+    int page_size;
+    int page_count;
+    int page;
+    int offset;
+    int page_items = 0;
+    Player **page_players = NULL;
     int i;
 
     for (i = 0; i < SEARCH_ITERS; ++i) {
@@ -318,6 +384,19 @@ static void print_range_result(Player *players, int count, BTree *btree, BPTree 
         bptree_ops_total += g_op_count;
     }
 
+    page_size = normalize_page_size(requested_page_size);
+    page_count = linear_count > 0 ? (linear_count + page_size - 1) / page_size : 0;
+    page = requested_page > 0 ? requested_page : 1;
+    if (page_count > 0 && page > page_count) {
+        page = page_count;
+    }
+
+    offset = (page - 1) * page_size;
+    page_players = (Player **)calloc((size_t)page_size, sizeof(Player *));
+    if (page_players) {
+        page_items = collect_range_page(players, count, lo, hi, offset, page_size, page_players);
+    }
+
     printf("{");
     printf("\"ok\":true,");
     printf("\"size\":%d,", count);
@@ -330,9 +409,15 @@ static void print_range_result(Player *players, int count, BTree *btree, BPTree 
     printf("\"btree_ops\":%lld,", btree_ops_total / SEARCH_ITERS);
     printf("\"bptree_time\":%.3f,", (double)bptree_total / SEARCH_ITERS / 1000.0);
     printf("\"bptree_ops\":%lld,", bptree_ops_total / SEARCH_ITERS);
-    printf("\"counts_match\":%s", (linear_count == btree_count && linear_count == bptree_count) ? "true" : "false");
+    printf("\"page\":%d,", page);
+    printf("\"page_size\":%d,", page_size);
+    printf("\"page_count\":%d,", page_count);
+    printf("\"counts_match\":%s,", (linear_count == btree_count && linear_count == bptree_count) ? "true" : "false");
+    printf("\"players\":");
+    print_range_players_json(page_players, page_items);
     printf("}\n");
     fflush(stdout);
+    free(page_players);
 }
 
 static void print_top_result(Player *players, int count, BTree *btree, BPTree *bptree) {
@@ -430,6 +515,9 @@ int main(int argc, char **argv) {
         int target_id = 0;
         int lo = 0;
         int hi = 0;
+        int page = 1;
+        int page_size = DEFAULT_PAGE_SIZE;
+        int parsed;
 
         if (strncmp(line, "search ", 7) == 0) {
             target_id = atoi(line + 7);
@@ -443,14 +531,22 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        if (sscanf(line, "range %d %d", &lo, &hi) == 2) {
-            if (lo <= 0 || hi <= 0 || hi < lo) {
+        parsed = sscanf(line, "range %d %d %d %d", &lo, &hi, &page, &page_size);
+        if (parsed >= 2) {
+            if (lo <= 0 || hi <= 0 || hi < lo || page <= 0 || page_size <= 0) {
                 printf("{\"ok\":false,\"message\":\"lo/hi must be positive and hi >= lo\"}\n");
                 fflush(stdout);
                 continue;
             }
 
-            print_range_result(players, count, btree, bptree, lo, hi);
+            if (parsed < 3) {
+                page = 1;
+            }
+            if (parsed < 4) {
+                page_size = DEFAULT_PAGE_SIZE;
+            }
+
+            print_range_result(players, count, btree, bptree, lo, hi, page, page_size);
             continue;
         }
 

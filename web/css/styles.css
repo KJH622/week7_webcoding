@@ -368,6 +368,40 @@ button, select, input {
   margin-top: 18px;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.table-pagination p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.page-btn {
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(35, 34, 32, 0.72);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.page-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(125, 115, 231, 0.48);
+}
+
+.page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -439,5 +473,9 @@ tbody tr:hover {
   .result-card,
   .stat-card {
     padding: 18px;
+  }
+
+  .table-pagination {
+    justify-content: space-between;
   }
 }

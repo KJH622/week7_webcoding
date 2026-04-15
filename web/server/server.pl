@@ -300,13 +300,26 @@ sub handle_range {
     my $lo     = $params{lo} // 1;
     my $hi     = $params{hi} // '';
     my $count  = $params{count} // 1000000;
+    my $page   = $params{page} // 1;
+    my $page_size = $params{page_size} // 10;
     my $output;
     my $payload;
 
-    unless ($lo =~ /^\d+$/ && $hi =~ /^\d+$/ && $count =~ /^\d+$/ && $lo > 0 && $hi >= $lo && $count > 0) {
+    unless (
+        $lo =~ /^\d+$/
+        && $hi =~ /^\d+$/
+        && $count =~ /^\d+$/
+        && $page =~ /^\d+$/
+        && $page_size =~ /^\d+$/
+        && $lo > 0
+        && $hi >= $lo
+        && $count > 0
+        && $page > 0
+        && $page_size > 0
+    ) {
         return send_json($client, '400 Bad Request', {
             ok => JSON::PP::false,
-            message => 'lo, hi, count 값이 올바르지 않습니다.'
+            message => 'lo, hi, count, page, page_size 값이 올바르지 않습니다.'
         });
     }
 
@@ -327,7 +340,7 @@ sub handle_range {
         });
     }
 
-    print {$engine_in} "range $lo $hi\n";
+    print {$engine_in} "range $lo $hi $page $page_size\n";
     $output = <$engine_out>;
     if (!defined $output) {
         local $/;
