@@ -1,205 +1,269 @@
 #include "btree.h"
-#include <stdlib.h>
-#include <string.h>
 
-/* -------------------------------------------------- 내부 헬퍼 */
+#include <stdlib.h>
+
+typedef struct {
+    int did_split;
+    int promoted_key;
+    void *promoted_ptr;
+    BTNode *right;
+} BTInsertResult;
 
 static BTNode *new_node(int is_leaf) {
-    BTNode *n = calloc(1, sizeof(BTNode));
-    n->is_leaf = is_leaf;
-    return n;
-}
-
-/* node 내에서 key가 삽입될 위치(첫 번째 keys[i] >= key인 i) 반환 */
-static int find_pos(BTNode *node, int key) {
-    int i = 0;
-    while (i < node->num_keys && node->keys[i] < key)
-        i++;
-    return i;
-}
-
-/* 분할 결과를 담는 구조체 */
-typedef struct {
-    int     key;    /* 부모로 올라갈 키 */
-    void   *ptr;    /* 해당 키의 레코드 포인터 */
-    BTNode *right;  /* 새로 생긴 오른쪽 노드 */
-} Split;
-
-/*
- * 꽉 찬 노드(num_keys == BT_ORDER)를 둘로 분할.
- * - 왼쪽(node): keys[0 .. mid-1]  (mid개)
- * - 승격 키:    keys[mid]
- * - 오른쪽:     keys[mid+1 .. BT_ORDER-1]  (BT_ORDER-mid-1개)
- */
-static void split_node(BTNode *node, Split *out) {
-    int mid         = BT_ORDER / 2;   /* 16 */
-    int right_count = node->num_keys - mid - 1;
-
-    BTNode *right = new_node(node->is_leaf);
-
-    /* 오른쪽 노드에 키/포인터 복사 */
-    for (int i = 0; i < right_count; i++) {
-        right->keys[i] = node->keys[mid + 1 + i];
-        right->ptrs[i] = node->ptrs[mid + 1 + i];
+    BTNode *node = (BTNode *)calloc(1, sizeof(BTNode));
+    if (!node) {
+        return NULL;
     }
-    /* 자식 포인터 복사 (내부 노드일 때) */
-    if (!node->is_leaf) {
-        for (int i = 0; i <= right_count; i++)
-            right->children[i] = node->children[mid + 1 + i];
-    }
-    right->num_keys = right_count;
 
-    /* 승격 키 설정 */
-    out->key   = node->keys[mid];
-    out->ptr   = node->ptrs[mid];
-    out->right = right;
-
-    /* 왼쪽 노드는 mid개만 남김 */
-    node->num_keys = mid;
+    node->is_leaf = is_leaf;
+    return node;
 }
 
-/*
- * 재귀 삽입.
- * 반환값: 분할이 발생했으면 1, 아니면 0.
- * 분할 결과는 s에 저장.
- */
-static int insert_rec(BTNode *node, int key, void *record_ptr, Split *s) {
-    int pos = find_pos(node, key);
+static int lower_bound_keys(const int *keys, int count, int key) {
+    int lo = 0;
+    int hi = count;
 
-    /* 키 중복: 포인터만 업데이트 */
-    if (pos < node->num_keys && node->keys[pos] == key) {
-        node->ptrs[pos] = record_ptr;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (keys[mid] < key) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    return lo;
+}
+
+static BTInsertResult insert_recursive(BTNode *node, int key, void *record_ptr) {
+    BTInsertResult result = {0, 0, NULL, NULL};
+    int idx = lower_bound_keys(node->keys, node->num_keys, key);
+
+    if (node->is_leaf) {
+        int i;
+
+        if (idx < node->num_keys && node->keys[idx] == key) {
+            node->ptrs[idx] = record_ptr;
+            return result;
+        }
+
+        for (i = node->num_keys; i > idx; --i) {
+            node->keys[i] = node->keys[i - 1];
+            node->ptrs[i] = node->ptrs[i - 1];
+        }
+
+        node->keys[idx] = key;
+        node->ptrs[idx] = record_ptr;
+        node->num_keys += 1;
+
+        if (node->num_keys <= BT_ORDER) {
+            return result;
+        }
+    } else {
+        BTInsertResult child_result = insert_recursive(node->children[idx], key, record_ptr);
+        int i;
+
+        if (!child_result.did_split) {
+            return result;
+        }
+
+        for (i = node->num_keys; i > idx; --i) {
+            node->keys[i] = node->keys[i - 1];
+            node->ptrs[i] = node->ptrs[i - 1];
+        }
+        for (i = node->num_keys + 1; i > idx + 1; --i) {
+            node->children[i] = node->children[i - 1];
+        }
+
+        node->keys[idx] = child_result.promoted_key;
+        node->ptrs[idx] = child_result.promoted_ptr;
+        node->children[idx + 1] = child_result.right;
+        node->num_keys += 1;
+
+        if (node->num_keys <= BT_ORDER) {
+            return result;
+        }
+    }
+
+    {
+        BTNode *right = new_node(node->is_leaf);
+        int total = node->num_keys;
+        int mid = total / 2;
+        int right_keys;
+        int i;
+
+        result.did_split = 1;
+        result.right = right;
+
+        if (node->is_leaf) {
+            right_keys = total - mid;
+
+            for (i = 0; i < right_keys; ++i) {
+                right->keys[i] = node->keys[mid + i];
+                right->ptrs[i] = node->ptrs[mid + i];
+            }
+
+            right->num_keys = right_keys;
+            node->num_keys = mid;
+            result.promoted_key = right->keys[0];
+            result.promoted_ptr = right->ptrs[0];
+        } else {
+            int promoted_index = mid;
+            int right_children = total - promoted_index - 1;
+
+            result.promoted_key = node->keys[promoted_index];
+            result.promoted_ptr = node->ptrs[promoted_index];
+
+            for (i = 0; i < right_children; ++i) {
+                right->keys[i] = node->keys[promoted_index + 1 + i];
+                right->ptrs[i] = node->ptrs[promoted_index + 1 + i];
+            }
+            for (i = 0; i < right_children + 1; ++i) {
+                right->children[i] = node->children[promoted_index + 1 + i];
+            }
+
+            right->num_keys = right_children;
+            node->num_keys = promoted_index;
+        }
+    }
+
+    return result;
+}
+
+static void *search_recursive(BTNode *node, int key) {
+    int idx;
+
+    if (!node) {
+        return NULL;
+    }
+
+    idx = lower_bound_keys(node->keys, node->num_keys, key);
+
+    if (node->is_leaf) {
+        if (idx < node->num_keys && node->keys[idx] == key) {
+            return node->ptrs[idx];
+        }
+        return NULL;
+    }
+
+    if (idx < node->num_keys && node->keys[idx] == key) {
+        return node->ptrs[idx];
+    }
+
+    return search_recursive(node->children[idx], key);
+}
+
+static int range_recursive(BTNode *node, int lo, int hi) {
+    int count = 0;
+    int i;
+
+    if (!node) {
         return 0;
     }
 
     if (node->is_leaf) {
-        /* 리프 노드: 해당 위치에 키/포인터 삽입 */
-        memmove(&node->keys[pos + 1], &node->keys[pos],
-                sizeof(int) * (node->num_keys - pos));
-        memmove(&node->ptrs[pos + 1], &node->ptrs[pos],
-                sizeof(void *) * (node->num_keys - pos));
-        node->keys[pos] = key;
-        node->ptrs[pos] = record_ptr;
-        node->num_keys++;
-    } else {
-        /* 내부 노드: 적절한 자식으로 재귀 삽입 */
-        Split child_split;
-        int promoted = insert_rec(node->children[pos], key, record_ptr, &child_split);
+        for (i = 0; i < node->num_keys; ++i) {
+            if (node->keys[i] >= lo && node->keys[i] <= hi) {
+                count += 1;
+            }
+        }
+        return count;
+    }
 
-        if (promoted) {
-            /* 자식에서 분할 발생 → 승격된 키를 현재 노드에 삽입 */
-            memmove(&node->keys[pos + 1], &node->keys[pos],
-                    sizeof(int) * (node->num_keys - pos));
-            memmove(&node->ptrs[pos + 1], &node->ptrs[pos],
-                    sizeof(void *) * (node->num_keys - pos));
-            memmove(&node->children[pos + 2], &node->children[pos + 1],
-                    sizeof(BTNode *) * (node->num_keys - pos));
-            node->keys[pos]         = child_split.key;
-            node->ptrs[pos]         = child_split.ptr;
-            node->children[pos + 1] = child_split.right;
-            node->num_keys++;
+    for (i = 0; i < node->num_keys; ++i) {
+        if (lo < node->keys[i]) {
+            count += range_recursive(node->children[i], lo, hi);
+        }
+        if (node->keys[i] >= lo && node->keys[i] <= hi) {
+            count += 1;
+        }
+        if (node->keys[i] > hi) {
+            return count;
         }
     }
 
-    /* 오버플로우 확인 */
-    if (node->num_keys == BT_ORDER) {
-        split_node(node, s);
-        return 1;
-    }
-    return 0;
-}
-
-/* -------------------------------------------------- 공개 API */
-
-BTree *btree_create(void) {
-    BTree *t = calloc(1, sizeof(BTree));
-    t->root  = new_node(1);
-    return t;
-}
-
-void btree_insert(BTree *tree, int key, void *record_ptr) {
-    Split s;
-    int promoted = insert_rec(tree->root, key, record_ptr, &s);
-    if (promoted) {
-        /* 루트가 분할됨 → 새 루트 생성 */
-        BTNode *new_root      = new_node(0);
-        new_root->keys[0]     = s.key;
-        new_root->ptrs[0]     = s.ptr;
-        new_root->children[0] = tree->root;
-        new_root->children[1] = s.right;
-        new_root->num_keys    = 1;
-        tree->root = new_root;
-    }
-}
-
-/*
- * 단일 탐색: 루트부터 내려가며 모든 노드에서 키 비교.
- * (B 트리는 리프뿐 아니라 내부 노드에도 레코드가 있음)
- */
-void *btree_search(BTree *tree, int key) {
-    BTNode *node = tree->root;
-    while (node != NULL) {
-        int i = 0;
-        while (i < node->num_keys && node->keys[i] < key)
-            i++;
-        if (i < node->num_keys && node->keys[i] == key)
-            return node->ptrs[i];   /* 발견 */
-        if (node->is_leaf)
-            return NULL;            /* 리프까지 왔는데 없음 */
-        node = node->children[i];
-    }
-    return NULL;
-}
-
-/*
- * 범위 탐색 재귀 헬퍼.
- * 모든 노드(내부 + 리프)를 순회하며 lo ~ hi 범위의 키 개수를 센다.
- *
- * children[i] 에는 keys[i] 보다 작은 키만 있으므로:
- *   - lo < keys[i] 일 때만 children[i] 방문
- * keys[i] > hi 이면 이후 키/자식은 방문 불필요 → 조기 종료
- */
-static int range_rec(BTNode *node, int lo, int hi) {
-    if (node == NULL) return 0;
-    int count = 0;
-
-    for (int i = 0; i < node->num_keys; i++) {
-        /* children[i]에 범위 내 키가 있을 수 있으면 먼저 방문 */
-        if (!node->is_leaf && lo < node->keys[i])
-            count += range_rec(node->children[i], lo, hi);
-
-        /* hi 초과 → 이후는 볼 필요 없음 */
-        if (node->keys[i] > hi)
-            return count;
-
-        /* 현재 키가 범위 안이면 카운트 */
-        if (node->keys[i] >= lo)
-            count++;
-    }
-
-    /* 가장 오른쪽 자식 방문 (마지막 키보다 큰 키들) */
-    if (!node->is_leaf)
-        count += range_rec(node->children[node->num_keys], lo, hi);
-
+    count += range_recursive(node->children[node->num_keys], lo, hi);
     return count;
 }
 
-int btree_range(BTree *tree, int lo, int hi) {
-    return range_rec(tree->root, lo, hi);
-}
+static void free_recursive(BTNode *node) {
+    int i;
 
-/* -------------------------------------------------- 메모리 해제 */
-
-static void free_node(BTNode *node) {
-    if (node == NULL) return;
-    if (!node->is_leaf) {
-        for (int i = 0; i <= node->num_keys; i++)
-            free_node(node->children[i]);
+    if (!node) {
+        return;
     }
+
+    if (!node->is_leaf) {
+        for (i = 0; i <= node->num_keys; ++i) {
+            free_recursive(node->children[i]);
+        }
+    }
+
     free(node);
 }
 
+BTree *btree_create(void) {
+    BTree *tree = (BTree *)calloc(1, sizeof(BTree));
+    if (!tree) {
+        return NULL;
+    }
+
+    tree->root = new_node(1);
+    if (!tree->root) {
+        free(tree);
+        return NULL;
+    }
+
+    return tree;
+}
+
+void btree_insert(BTree *tree, int key, void *record_ptr) {
+    BTInsertResult result;
+    BTNode *new_root;
+
+    if (!tree || !tree->root) {
+        return;
+    }
+
+    result = insert_recursive(tree->root, key, record_ptr);
+    if (!result.did_split) {
+        return;
+    }
+
+    new_root = new_node(0);
+    if (!new_root) {
+        return;
+    }
+
+    new_root->keys[0] = result.promoted_key;
+    new_root->ptrs[0] = result.promoted_ptr;
+    new_root->children[0] = tree->root;
+    new_root->children[1] = result.right;
+    new_root->num_keys = 1;
+    tree->root = new_root;
+}
+
+void *btree_search(BTree *tree, int key) {
+    if (!tree) {
+        return NULL;
+    }
+
+    return search_recursive(tree->root, key);
+}
+
+int btree_range(BTree *tree, int lo, int hi) {
+    if (!tree || lo > hi) {
+        return 0;
+    }
+
+    return range_recursive(tree->root, lo, hi);
+}
+
 void btree_free(BTree *tree) {
-    free_node(tree->root);
+    if (!tree) {
+        return;
+    }
+
+    free_recursive(tree->root);
     free(tree);
 }
