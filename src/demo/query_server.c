@@ -11,6 +11,10 @@
 #include "../btree/btree.h"
 #include "../bplus_tree/bplus_tree.h"
 
+#define SEARCH_ITERS 5
+
+long long g_op_count = 0;
+
 static long long now_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -64,6 +68,57 @@ static void print_search_result(Player *players, int count, BTree *btree, BPTree
     fflush(stdout);
 }
 
+static void print_range_result(Player *players, int count, BTree *btree, BPTree *bptree, int lo, int hi) {
+    int linear_count = 0;
+    int btree_count = 0;
+    int bptree_count = 0;
+    long long linear_total = 0;
+    long long btree_total = 0;
+    long long bptree_total = 0;
+    long long linear_ops_total = 0;
+    long long btree_ops_total = 0;
+    long long bptree_ops_total = 0;
+    int i;
+
+    for (i = 0; i < SEARCH_ITERS; ++i) {
+        long long start;
+
+        g_op_count = 0;
+        start = now_ns();
+        linear_count = linear_range(players, count, lo, hi);
+        linear_total += now_ns() - start;
+        linear_ops_total += g_op_count;
+
+        g_op_count = 0;
+        start = now_ns();
+        btree_count = btree_range(btree, lo, hi);
+        btree_total += now_ns() - start;
+        btree_ops_total += g_op_count;
+
+        g_op_count = 0;
+        start = now_ns();
+        bptree_count = bptree_range(bptree, lo, hi);
+        bptree_total += now_ns() - start;
+        bptree_ops_total += g_op_count;
+    }
+
+    printf("{");
+    printf("\"ok\":true,");
+    printf("\"size\":%d,", count);
+    printf("\"lo\":%d,", lo);
+    printf("\"hi\":%d,", hi);
+    printf("\"range_count\":%d,", linear_count);
+    printf("\"linear_time\":%.3f,", (double)linear_total / SEARCH_ITERS / 1000.0);
+    printf("\"linear_ops\":%lld,", linear_ops_total / SEARCH_ITERS);
+    printf("\"btree_time\":%.3f,", (double)btree_total / SEARCH_ITERS / 1000.0);
+    printf("\"btree_ops\":%lld,", btree_ops_total / SEARCH_ITERS);
+    printf("\"bptree_time\":%.3f,", (double)bptree_total / SEARCH_ITERS / 1000.0);
+    printf("\"bptree_ops\":%lld,", bptree_ops_total / SEARCH_ITERS);
+    printf("\"counts_match\":%s", (linear_count == btree_count && linear_count == bptree_count) ? "true" : "false");
+    printf("}\n");
+    fflush(stdout);
+}
+
 int main(int argc, char **argv) {
     const char *csv_path;
     Player *players;
@@ -100,6 +155,8 @@ int main(int argc, char **argv) {
 
     while (fgets(line, sizeof(line), stdin)) {
         int target_id = 0;
+        int lo = 0;
+        int hi = 0;
 
         if (strncmp(line, "search ", 7) == 0) {
             target_id = atoi(line + 7);
@@ -110,6 +167,17 @@ int main(int argc, char **argv) {
             }
 
             print_search_result(players, count, btree, bptree, target_id);
+            continue;
+        }
+
+        if (sscanf(line, "range %d %d", &lo, &hi) == 2) {
+            if (lo <= 0 || hi <= 0 || hi < lo) {
+                printf("{\"ok\":false,\"message\":\"lo/hi must be positive and hi >= lo\"}\n");
+                fflush(stdout);
+                continue;
+            }
+
+            print_range_result(players, count, btree, bptree, lo, hi);
             continue;
         }
 

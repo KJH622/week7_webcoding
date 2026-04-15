@@ -2,8 +2,11 @@ const rankingBody = document.getElementById("ranking-body");
 const runButton = document.getElementById("run-search");
 const datasetSize = document.getElementById("dataset-size");
 const modeTabs = [...document.querySelectorAll(".mode-tab")];
-const idInputWrap = document.getElementById("id-input-wrap");
-const targetIdInput = document.getElementById("target-id");
+const idInputWrap    = document.getElementById("id-input-wrap");
+const targetIdInput  = document.getElementById("target-id");
+const rangeInputWrap = document.getElementById("range-input-wrap");
+const rangeLoInput   = document.getElementById("range-lo");
+const rangeHiInput   = document.getElementById("range-hi");
 
 const summaryEls = {
   count: document.getElementById("player-count"),
@@ -63,13 +66,50 @@ function updateSummary(count) {
 }
 
 function updateIdInputVisibility() {
-  idInputWrap.style.display = currentMode === "single" ? "block" : "none";
+  idInputWrap.style.display    = currentMode === "single" ? "block" : "none";
+  rangeInputWrap.style.display = currentMode === "range"  ? "flex"  : "none";
 }
 
 function getTargetId() {
   const value = Number(targetIdInput.value);
   const count = Number(datasetSize.value);
   return Number.isInteger(value) && value > 0 ? value : Math.floor(count / 2);
+}
+
+function getRangeLo() {
+  const value = Number(rangeLoInput.value);
+  const count = Number(datasetSize.value);
+  if (!Number.isInteger(value) || value <= 0) {
+    return 1;
+  }
+  return Math.min(value, count);
+}
+
+function getRangeHi() {
+  const value = Number(rangeHiInput.value);
+  const count = Number(datasetSize.value);
+  if (!Number.isInteger(value) || value <= 0) {
+    return Math.max(1, Math.floor(count * 0.01));
+  }
+  return Math.min(value, count);
+}
+
+function getRangeBounds() {
+  const count = Number(datasetSize.value);
+  let lo = getRangeLo();
+  let hi = getRangeHi();
+
+  if (hi < lo) {
+    hi = lo;
+  }
+
+  lo = Math.min(lo, count);
+  hi = Math.min(hi, count);
+
+  rangeLoInput.value = lo;
+  rangeHiInput.value = hi;
+
+  return { lo, hi };
 }
 
 async function fetchJson(url, label) {
@@ -104,11 +144,11 @@ async function ensureDataset(count) {
     return benchmarkData;
   }
 
-  runButton.textContent = "CSV 생성 및 벤치마크 실행 중...";
+  runButton.textContent = "CSV 로드 및 벤치마크 실행 중...";
 
-  const generated = await fetchJson(buildUrl(`api/generate?count=${count}`), "데이터 생성 실패");
+  const generated = await fetchJson(buildUrl(`api/generate?count=${count}`), "CSV 로드 실패");
   if (!generated.ok) {
-    throw new Error(generated.message || "데이터 생성 실패");
+    throw new Error(generated.message || "CSV 로드 실패");
   }
 
   benchmarkData = await fetchJson(
@@ -180,6 +220,33 @@ function renderRange(benchmark) {
   renderTopPlayers(benchmark.top_players);
 }
 
+// 실시간 범위 탐색 결과 렌더링 (/api/range 응답 전용)
+function renderRangeRealtime(data, benchmark) {
+  resultEls.linearTime.textContent  = formatTimeUs(data.linear_time);
+  resultEls.btreeTime.textContent   = formatTimeUs(data.btree_time);
+  resultEls.bptreeTime.textContent  = formatTimeUs(data.bptree_time);
+
+  resultEls.linearOps.textContent  = data.linear_ops  > 0 ? `${formatNumber(data.linear_ops)}회`  : "미측정";
+  resultEls.btreeOps.textContent   = data.btree_ops   > 0 ? `${formatNumber(data.btree_ops)}회`   : "미측정";
+  resultEls.bptreeOps.textContent  = data.bptree_ops  > 0 ? `${formatNumber(data.bptree_ops)}회`  : "미측정";
+
+  const lo = formatNumber(data.lo);
+  const hi = formatNumber(data.hi);
+  resultEls.linearCaption.textContent  = `ID #${lo}~${hi} 범위를 선형 탐색으로 전체 확인`;
+  resultEls.btreeCaption.textContent   = `ID #${lo}~${hi} 범위를 B 트리로 분기 탐색`;
+  resultEls.bptreeCaption.textContent  = `ID #${lo}~${hi} 범위를 연결된 리프로 순회`;
+
+  setProgressBars({
+    linear: data.linear_time,
+    btree:  data.btree_time,
+    bptree: data.bptree_time,
+  });
+
+  renderTopPlayers(benchmark.top_players);
+  summaryEls.lastSearch.textContent    = `ID #${lo} ~ ${hi}`;
+  summaryEls.tableSubtitle.textContent = `범위 탐색 기준 상위 10명 샘플 (${formatNumber(data.size)}건)`;
+}
+
 function renderSingle(payload, benchmark) {
   const count = benchmark.meta.dataset_size;
   const targetId = payload.target_id;
@@ -236,7 +303,18 @@ async function runCurrentMode() {
       }
       renderSingle(payload, benchmark);
     } else if (currentMode === "range") {
-      renderRange(benchmark);
+      const { lo, hi } = getRangeBounds();
+      runButton.textContent = "탐색 실행 중...";
+      const rangePayload = await fetchJson(
+        buildUrl(`api/range?lo=${lo}&hi=${hi}&count=${count}`),
+        "범위 탐색 실패"
+      );
+      if (!rangePayload.ok) {
+        // 실시간 실패 시 사전 측정값으로 폴백
+        renderRange(benchmark);
+      } else {
+        renderRangeRealtime(rangePayload, benchmark);
+      }
     } else {
       resultEls.linearTime.textContent = formatTimeUs(benchmark.single_search.linear.avg_us);
       resultEls.btreeTime.textContent = formatTimeUs(benchmark.single_search.btree.avg_us);
@@ -280,6 +358,18 @@ datasetSize.addEventListener("change", () => {
 runButton.addEventListener("click", runCurrentMode);
 targetIdInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && currentMode === "single") {
+    runCurrentMode();
+  }
+});
+
+rangeLoInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && currentMode === "range") {
+    runCurrentMode();
+  }
+});
+
+rangeHiInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && currentMode === "range") {
     runCurrentMode();
   }
 });

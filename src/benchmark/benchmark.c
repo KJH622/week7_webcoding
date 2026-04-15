@@ -11,6 +11,8 @@
 #include "../btree/btree.h"
 #include "../bplus_tree/bplus_tree.h"
 
+long long g_op_count = 0;
+
 typedef struct {
     double avg_us;
     double ops;

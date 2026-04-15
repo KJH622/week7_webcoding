@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* benchmark.c에서 정의된 전역 연산 횟수 카운터 */
-extern long long g_op_count;
+/* 별도 정의가 없을 때 사용할 기본 연산 횟수 카운터 */
+__attribute__((weak)) long long g_op_count = 0;
 
 /* -------------------------------------------------- 내부 헬퍼 */
 
@@ -143,7 +143,14 @@ static void *search_recursive(BTNode *node, int key) {
         return NULL;
     }
 
-    idx = lower_bound_keys(node->keys, node->num_keys, key);
+    idx = 0;
+    while (idx < node->num_keys && node->keys[idx] < key) {
+        g_op_count++;
+        idx++;
+    }
+    if (idx < node->num_keys) {
+        g_op_count++;
+    }
 
     if (node->is_leaf) {
         if (idx < node->num_keys && node->keys[idx] == key) {
@@ -169,6 +176,7 @@ static int range_recursive(BTNode *node, int lo, int hi) {
 
     if (node->is_leaf) {
         for (i = 0; i < node->num_keys; ++i) {
+            g_op_count++;
             if (node->keys[i] >= lo && node->keys[i] <= hi) {
                 count += 1;
             }
@@ -180,6 +188,7 @@ static int range_recursive(BTNode *node, int lo, int hi) {
         if (lo < node->keys[i]) {
             count += range_recursive(node->children[i], lo, hi);
         }
+        g_op_count++;
         if (node->keys[i] >= lo && node->keys[i] <= hi) {
             count += 1;
         }
@@ -263,97 +272,6 @@ int btree_range(BTree *tree, int lo, int hi) {
     }
 
     return range_recursive(tree->root, lo, hi);
-}
-
-/* -------------------------------------------------- 공개 API */
-
-BTree *btree_create(void) {
-    BTree *t = calloc(1, sizeof(BTree));
-    t->root  = new_node(1);
-    return t;
-}
-
-void btree_insert(BTree *tree, int key, void *record_ptr) {
-    Split s;
-    int promoted = insert_rec(tree->root, key, record_ptr, &s);
-    if (promoted) {
-        /* 루트가 분할됨 → 새 루트 생성 */
-        BTNode *new_root      = new_node(0);
-        new_root->keys[0]     = s.key;
-        new_root->ptrs[0]     = s.ptr;
-        new_root->children[0] = tree->root;
-        new_root->children[1] = s.right;
-        new_root->num_keys    = 1;
-        tree->root = new_root;
-    }
-}
-
-/*
- * 단일 탐색: 루트부터 내려가며 모든 노드에서 키 비교.
- * (B 트리는 리프뿐 아니라 내부 노드에도 레코드가 있음)
- */
-void *btree_search(BTree *tree, int key) {
-    BTNode *node = tree->root;
-    while (node != NULL) {
-        int i = 0;
-        while (i < node->num_keys && node->keys[i] < key) {
-            g_op_count++;          /* 키 비교 1회 */
-            i++;
-        }
-        g_op_count++;              /* 최종 비교 (== 또는 범위 초과) */
-        if (i < node->num_keys && node->keys[i] == key)
-            return node->ptrs[i];
-        if (node->is_leaf)
-            return NULL;
-        node = node->children[i];
-    }
-    return NULL;
-}
-
-/*
- * 범위 탐색 재귀 헬퍼.
- * 모든 노드(내부 + 리프)를 순회하며 lo ~ hi 범위의 키 개수를 센다.
- *
- * children[i] 에는 keys[i] 보다 작은 키만 있으므로:
- *   - lo < keys[i] 일 때만 children[i] 방문
- * keys[i] > hi 이면 이후 키/자식은 방문 불필요 → 조기 종료
- */
-static int range_rec(BTNode *node, int lo, int hi) {
-    if (node == NULL) return 0;
-    int count = 0;
-
-    for (int i = 0; i < node->num_keys; i++) {
-        if (!node->is_leaf && lo < node->keys[i])
-            count += range_rec(node->children[i], lo, hi);
-
-        g_op_count++;              /* 키 비교 1회 */
-        if (node->keys[i] > hi)
-            return count;
-
-        if (node->keys[i] >= lo)
-            count++;
-    }
-
-    /* 가장 오른쪽 자식 방문 (마지막 키보다 큰 키들) */
-    if (!node->is_leaf)
-        count += range_rec(node->children[node->num_keys], lo, hi);
-
-    return count;
-}
-
-int btree_range(BTree *tree, int lo, int hi) {
-    return range_rec(tree->root, lo, hi);
-}
-
-/* -------------------------------------------------- 메모리 해제 */
-
-static void free_node(BTNode *node) {
-    if (node == NULL) return;
-    if (!node->is_leaf) {
-        for (int i = 0; i <= node->num_keys; i++)
-            free_node(node->children[i]);
-    }
-    free(node);
 }
 
 void btree_free(BTree *tree) {
