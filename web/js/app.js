@@ -33,56 +33,114 @@ const resultEls = {
 };
 
 const topPlayers = [
-  { id: 91823, name: "ShadowBlade", score: 9980, tier: "챌린저", width: 120 },
-  { id: 445221, name: "NightFury", score: 9870, tier: "챌린저", width: 90 },
-  { id: 103942, name: "CrimsonAce", score: 9750, tier: "챌린저", width: 110 },
-  { id: 887341, name: "StarlightX", score: 9620, tier: "챌린저", width: 88 },
-  { id: 234109, name: "IronWolf", score: 9540, tier: "챌린저", width: 84 },
-  { id: 672019, name: "PixelKing", score: 9410, tier: "다이아", width: 92 },
-  { id: 112984, name: "VoidHunter", score: 9300, tier: "다이아", width: 104 },
-  { id: 509283, name: "FrostByte", score: 9180, tier: "다이아", width: 82 },
-  { id: 384729, name: "ThunderX", score: 9050, tier: "다이아", width: 78 },
-  { id: 721039, name: "NeonRift", score: 8920, tier: "다이아", width: 84 },
+  { id: 91823, name: "ShadowBlade", score: 9980, tier: "챌린저" },
+  { id: 445221, name: "NightFury", score: 9870, tier: "챌린저" },
+  { id: 103942, name: "CrimsonAce", score: 9750, tier: "챌린저" },
+  { id: 887341, name: "StarlightX", score: 9620, tier: "챌린저" },
+  { id: 234109, name: "IronWolf", score: 9540, tier: "챌린저" },
+  { id: 672019, name: "PixelKing", score: 9410, tier: "다이아" },
+  { id: 112984, name: "VoidHunter", score: 9300, tier: "다이아" },
+  { id: 509283, name: "FrostByte", score: 9180, tier: "다이아" },
+  { id: 384729, name: "ThunderX", score: 9050, tier: "다이아" },
+  { id: 721039, name: "NeonRift", score: 8920, tier: "다이아" },
 ];
 
+// 데이터셋 크기별 샘플 preset (실측값 없을 때 폴백용)
 const presets = {
   single: {
-    linearTime: '16.67 ms',
-    linearOps: '1,000,000회',
-    linearCaption: 'ID #500,000을 찾기 위해 테이블 절반 이상 순회',
-    btreeTime: '11 μs',
-    btreeOps: '500회',
-    btreeCaption: '루트부터 분기하며 대상 키 탐색',
-    bptreeTime: '3 μs',
-    bptreeOps: '160회',
-    bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
-    lastSearch: 'ID #500,000',
-    subtitle: '단일 탐색 결과 기준 샘플',
-    bars: { linear: '100%', btree: '28%', bptree: '18%' },
+    100000: {
+      linearTime: '1,667 μs', linearOps: '100,000회',
+      linearCaption: 'ID #50,000을 찾기 위해 테이블 절반 이상 순회',
+      btreeTime: '9 μs',  btreeOps: '420회',
+      btreeCaption: '루트부터 분기하며 대상 키 탐색',
+      bptreeTime: '2 μs', bptreeOps: '130회',
+      bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
+      subtitle: '단일 탐색 결과 기준 샘플 (10만)',
+      bars: { linear: '100%', btree: '27%', bptree: '12%' },
+    },
+    500000: {
+      linearTime: '8,335 μs', linearOps: '500,000회',
+      linearCaption: 'ID #250,000을 찾기 위해 테이블 절반 이상 순회',
+      btreeTime: '10 μs', btreeOps: '470회',
+      btreeCaption: '루트부터 분기하며 대상 키 탐색',
+      bptreeTime: '3 μs', bptreeOps: '150회',
+      bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
+      subtitle: '단일 탐색 결과 기준 샘플 (50만)',
+      bars: { linear: '100%', btree: '28%', bptree: '16%' },
+    },
+    1000000: {
+      linearTime: '16,670 μs', linearOps: '1,000,000회',
+      linearCaption: 'ID #500,000을 찾기 위해 테이블 절반 이상 순회',
+      btreeTime: '11 μs', btreeOps: '500회',
+      btreeCaption: '루트부터 분기하며 대상 키 탐색',
+      bptreeTime: '3 μs', bptreeOps: '160회',
+      bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
+      subtitle: '단일 탐색 결과 기준 샘플 (100만)',
+      bars: { linear: '100%', btree: '28%', bptree: '18%' },
+    },
+    5000000: {
+      linearTime: '83,350 μs', linearOps: '5,000,000회',
+      linearCaption: 'ID #2,500,000을 찾기 위해 테이블 절반 이상 순회',
+      btreeTime: '13 μs', btreeOps: '560회',
+      btreeCaption: '루트부터 분기하며 대상 키 탐색',
+      bptreeTime: '4 μs', bptreeOps: '180회',
+      bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
+      subtitle: '단일 탐색 결과 기준 샘플 (500만)',
+      bars: { linear: '100%', btree: '26%', bptree: '16%' },
+    },
   },
   range: {
-    linearTime: '3.98 ms',
-    linearOps: '1,001회',
-    linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
-    btreeTime: '410 μs',
-    btreeOps: '360회',
-    btreeCaption: '중간 노드 분기 후 범위 확장',
-    bptreeTime: '54 μs',
-    bptreeOps: '88회',
-    bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
-    lastSearch: 'ID #250,000 ~ 251,000',
-    subtitle: '범위 탐색 결과 기준 샘플',
-    bars: { linear: '76%', btree: '32%', bptree: '12%' },
+    100000: {
+      linearTime: '398 μs',    linearOps: '1,001회',
+      linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
+      btreeTime: '350 μs', btreeOps: '310회',
+      btreeCaption: '중간 노드 분기 후 범위 확장',
+      bptreeTime: '45 μs', bptreeOps: '72회',
+      bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
+      lastSearch: 'ID #1 ~ 1,000',
+      subtitle: '범위 탐색 결과 기준 샘플 (10만)',
+      bars: { linear: '100%', btree: '88%', bptree: '11%' },
+    },
+    500000: {
+      linearTime: '1,990 μs',  linearOps: '5,001회',
+      linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
+      btreeTime: '390 μs', btreeOps: '340회',
+      btreeCaption: '중간 노드 분기 후 범위 확장',
+      bptreeTime: '50 μs', bptreeOps: '80회',
+      bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
+      lastSearch: 'ID #1 ~ 5,000',
+      subtitle: '범위 탐색 결과 기준 샘플 (50만)',
+      bars: { linear: '100%', btree: '80%', bptree: '11%' },
+    },
+    1000000: {
+      linearTime: '3,980 μs',  linearOps: '10,001회',
+      linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
+      btreeTime: '410 μs', btreeOps: '360회',
+      btreeCaption: '중간 노드 분기 후 범위 확장',
+      bptreeTime: '54 μs', bptreeOps: '88회',
+      bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
+      lastSearch: 'ID #1 ~ 10,000',
+      subtitle: '범위 탐색 결과 기준 샘플 (100만)',
+      bars: { linear: '100%', btree: '76%', bptree: '13%' },
+    },
+    5000000: {
+      linearTime: '19,900 μs', linearOps: '50,001회',
+      linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
+      btreeTime: '450 μs', btreeOps: '400회',
+      btreeCaption: '중간 노드 분기 후 범위 확장',
+      bptreeTime: '65 μs', bptreeOps: '100회',
+      bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
+      lastSearch: 'ID #1 ~ 50,000',
+      subtitle: '범위 탐색 결과 기준 샘플 (500만)',
+      bars: { linear: '100%', btree: '74%', bptree: '13%' },
+    },
   },
   top10: {
-    linearTime: '16.67 ms',
-    linearOps: '1,000,000회',
+    linearTime: '16,670 μs', linearOps: '1,000,000회',
     linearCaption: 'TOP 10 집계 완료 (전체 순회)',
-    btreeTime: '11 μs',
-    btreeOps: '500회',
+    btreeTime: '11 μs', btreeOps: '500회',
     btreeCaption: '정렬 키 기준 탐색 후 상위 결과 수집',
-    bptreeTime: '3 μs',
-    bptreeOps: '160회',
+    bptreeTime: '3 μs', bptreeOps: '160회',
     bptreeCaption: 'TOP 10 집계 완료 (리프 순회만으로 처리)',
     lastSearch: 'TOP 10 Ranking',
     subtitle: '상위 10명 샘플',
@@ -96,9 +154,11 @@ function formatNumber(value) {
   return new Intl.NumberFormat('ko-KR').format(value);
 }
 
-// μs 단위 시간 포맷 (규약: ms 사용 금지, 0은 미측정)
-function formatTimeUs(us) {
-  if (!us || us <= 0) return '미측정';
+// μs 단위 시간 포맷 (규약: ms 사용 금지)
+// realMode=true: 실측값 표시 중 → 0은 측정 불가(< 1 μs)로 표시
+// realMode=false: 초기값 0 → 미측정 표시
+function formatTimeUs(us, realMode) {
+  if (us <= 0) return realMode ? '< 1 μs' : '미측정';
   return formatNumber(us) + ' μs';
 }
 
@@ -155,15 +215,18 @@ function applyRealData(mode, sizeIdx) {
   // 셋 다 미측정(0)이면 실측 데이터 미사용으로 간주
   if (!linearUs && !btreeUs && !bptreeUs) return false;
 
-  // 소요 시간 반영
-  resultEls.linearTime.textContent  = formatTimeUs(linearUs);
-  resultEls.btreeTime.textContent   = formatTimeUs(btreeUs);
-  resultEls.bptreeTime.textContent  = formatTimeUs(bptreeUs);
+  // 소요 시간 반영 (realMode=true: 0μs는 '< 1 μs'로 표시)
+  resultEls.linearTime.textContent  = formatTimeUs(linearUs,  true);
+  resultEls.btreeTime.textContent   = formatTimeUs(btreeUs,   true);
+  resultEls.bptreeTime.textContent  = formatTimeUs(bptreeUs,  true);
 
-  // 비교 횟수는 JSON 스키마에 없으므로 '미측정' 표시
-  resultEls.linearOps.textContent  = '미측정';
-  resultEls.btreeOps.textContent   = '미측정';
-  resultEls.bptreeOps.textContent  = '미측정';
+  // 비교 횟수 반영 (_ops 필드가 있으면 실측값, 없으면 미측정)
+  const linearOps  = src.linear_ops  ? src.linear_ops[sizeIdx]  : 0;
+  const btreeOps   = src.btree_ops   ? src.btree_ops[sizeIdx]   : 0;
+  const bptreeOps  = src.bptree_ops  ? src.bptree_ops[sizeIdx]  : 0;
+  resultEls.linearOps.textContent  = linearOps  > 0 ? formatNumber(linearOps)  + '회' : '미측정';
+  resultEls.btreeOps.textContent   = btreeOps   > 0 ? formatNumber(btreeOps)   + '회' : '미측정';
+  resultEls.bptreeOps.textContent  = bptreeOps  > 0 ? formatNumber(bptreeOps)  + '회' : '미측정';
 
   // 캡션 갱신
   const size = formatNumber(realData.sizes[sizeIdx]);
@@ -202,7 +265,6 @@ function renderTable(rows) {
           <td>
             <div class="player-name">
               <span>${player.name}</span>
-              <span class="name-bar" style="width:${player.width}px"></span>
             </div>
           </td>
           <td>${formatNumber(player.score)}</td>
@@ -214,8 +276,9 @@ function renderTable(rows) {
 }
 
 function updateSummary(count) {
-  summaryEls.count.textContent = formatNumber(Number(count));
-  summaryEls.height.textContent = count === "100000" ? "3" : count === "500000" ? "4" : "4";
+  const heightMap = { '100000': '3', '500000': '4', '1000000': '4', '5000000': '5' };
+  summaryEls.count.textContent  = formatNumber(Number(count));
+  summaryEls.height.textContent = heightMap[count] || '4';
 }
 
 function applyPreset() {
@@ -225,8 +288,11 @@ function applyPreset() {
     if (applyRealData(currentMode, sizeIdx)) return;
   }
 
-  // 실측 없거나 top10 모드 → preset 폴백
-  const preset = presets[currentMode];
+  // 실측 없거나 top10 모드 → 크기별 preset 폴백
+  const sizeKey = Number(datasetSize.value);
+  const preset = (currentMode === 'top10')
+    ? presets.top10
+    : (presets[currentMode][sizeKey] || presets[currentMode][1000000]);
 
   resultEls.linearTime.textContent = preset.linearTime;
   resultEls.linearOps.textContent = preset.linearOps;
@@ -261,8 +327,9 @@ modeTabs.forEach(function (button) {
   });
 });
 
-datasetSize.addEventListener("change", () => {
+datasetSize.addEventListener('change', function () {
   updateSummary(datasetSize.value);
+  applyPreset();
 });
 
 runButton.addEventListener("click", () => {
