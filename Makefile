@@ -1,34 +1,66 @@
 CC = gcc
-CFLAGS = -Wall -O2 -std=c99
-
-SRC_DIR = src
+CFLAGS = -Wall -Wextra -O2 -std=c99
 BIN_DIR = bin
+DATA_DIR = data
+CSV_PATH = $(DATA_DIR)/players_1000000.csv
 
-all: $(BIN_DIR) datagen bench
+all: $(BIN_DIR) datagen bench test demo_query query_server
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
-datagen:
-	$(CC) $(CFLAGS) $(SRC_DIR)/benchmark/datagen.c -o $(BIN_DIR)/datagen
+$(DATA_DIR):
+	mkdir -p $(DATA_DIR)
 
-bench:
+datagen: $(BIN_DIR)
 	$(CC) $(CFLAGS) \
-		$(SRC_DIR)/linear/linear_search.c \
-		$(SRC_DIR)/btree/btree.c \
-		$(SRC_DIR)/bplus_tree/bplus_tree.c \
-		$(SRC_DIR)/benchmark/benchmark.c \
+		src/common/dataset_io.c \
+		src/benchmark/datagen.c \
+		-o $(BIN_DIR)/datagen
+
+bench: $(BIN_DIR)
+	$(CC) $(CFLAGS) \
+		src/common/dataset_io.c \
+		src/linear/linear_search.c \
+		src/btree/btree.c src/bplus_tree/bplus_tree.c \
+		src/benchmark/benchmark.c \
 		-o $(BIN_DIR)/bench
 
-run:
-	./$(BIN_DIR)/datagen 1000000
-	./$(BIN_DIR)/bench
+test: $(BIN_DIR)
+	$(CC) $(CFLAGS) \
+		src/btree/btree.c src/bplus_tree/bplus_tree.c \
+		tests/test_trees.c \
+		-o $(BIN_DIR)/test_trees
 
-result:
-	@echo "===== 벤치마크 결과 ====="
-	./$(BIN_DIR)/bench | column -t
+demo_query: $(BIN_DIR)
+	$(CC) $(CFLAGS) \
+		src/common/dataset_io.c \
+		src/linear/linear_search.c \
+		src/btree/btree.c src/bplus_tree/bplus_tree.c \
+		src/demo/query_demo.c \
+		-o $(BIN_DIR)/query_demo
+
+query_server: $(BIN_DIR)
+	$(CC) $(CFLAGS) \
+		src/common/dataset_io.c \
+		src/linear/linear_search.c \
+		src/btree/btree.c src/bplus_tree/bplus_tree.c \
+		src/demo/query_server.c \
+		-o $(BIN_DIR)/query_server
+
+run: bench
+	./$(BIN_DIR)/bench $(CSV_PATH)
+
+csv: datagen $(DATA_DIR)
+	./$(BIN_DIR)/datagen 1000000 $(CSV_PATH)
+
+webdata: bench csv
+	./$(BIN_DIR)/bench $(CSV_PATH) web/assets/results.json
+
+check: test
+	./$(BIN_DIR)/test_trees
+
+result: webdata
 
 clean:
 	rm -rf $(BIN_DIR)
-
-.PHONY: all datagen bench run result clean

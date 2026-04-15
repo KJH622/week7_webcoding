@@ -1,14 +1,9 @@
-const rankingBody = document.getElementById('ranking-body');
-const runButton = document.getElementById('run-search');
-const datasetSize = document.getElementById('dataset-size');
-const modeTabs = [...document.querySelectorAll('.mode-tab')];
-const idInputWrap = document.getElementById('id-input-wrap');
-const targetIdInput = document.getElementById('target-id');
-
-
-// 실측 데이터 (results.json 로드 후 저장)
-let realData = null;
-let hasRealData = false;
+const rankingBody = document.getElementById("ranking-body");
+const runButton = document.getElementById("run-search");
+const datasetSize = document.getElementById("dataset-size");
+const modeTabs = [...document.querySelectorAll(".mode-tab")];
+const idInputWrap = document.getElementById("id-input-wrap");
+const targetIdInput = document.getElementById("target-id");
 
 const summaryEls = {
   count: document.getElementById("player-count"),
@@ -32,232 +27,249 @@ const resultEls = {
   bptreeBar: document.getElementById("bptree-bar"),
 };
 
-const topPlayers = [
-  { id: 91823, name: "ShadowBlade", score: 9980, tier: "챌린저", width: 120 },
-  { id: 445221, name: "NightFury", score: 9870, tier: "챌린저", width: 90 },
-  { id: 103942, name: "CrimsonAce", score: 9750, tier: "챌린저", width: 110 },
-  { id: 887341, name: "StarlightX", score: 9620, tier: "챌린저", width: 88 },
-  { id: 234109, name: "IronWolf", score: 9540, tier: "챌린저", width: 84 },
-  { id: 672019, name: "PixelKing", score: 9410, tier: "다이아", width: 92 },
-  { id: 112984, name: "VoidHunter", score: 9300, tier: "다이아", width: 104 },
-  { id: 509283, name: "FrostByte", score: 9180, tier: "다이아", width: 82 },
-  { id: 384729, name: "ThunderX", score: 9050, tier: "다이아", width: 78 },
-  { id: 721039, name: "NeonRift", score: 8920, tier: "다이아", width: 84 },
-];
+const apiBase = new URL("./", window.location.href);
 
-const presets = {
-  single: {
-    linearTime: '16.67 ms',
-    linearOps: '1,000,000회',
-    linearCaption: 'ID #500,000을 찾기 위해 테이블 절반 이상 순회',
-    btreeTime: '11 μs',
-    btreeOps: '500회',
-    btreeCaption: '루트부터 분기하며 대상 키 탐색',
-    bptreeTime: '3 μs',
-    bptreeOps: '160회',
-    bptreeCaption: '리프 노드까지 바로 이동해 조회 완료',
-    lastSearch: 'ID #500,000',
-    subtitle: '단일 탐색 결과 기준 샘플',
-    bars: { linear: '100%', btree: '28%', bptree: '18%' },
-  },
-  range: {
-    linearTime: '3.98 ms',
-    linearOps: '1,001회',
-    linearCaption: '범위 집계를 위해 매칭 레코드 전부 검사',
-    btreeTime: '410 μs',
-    btreeOps: '360회',
-    btreeCaption: '중간 노드 분기 후 범위 확장',
-    bptreeTime: '54 μs',
-    bptreeOps: '88회',
-    bptreeCaption: '연결된 리프 순회로 범위 탐색 최적',
-    lastSearch: 'ID #250,000 ~ 251,000',
-    subtitle: '범위 탐색 결과 기준 샘플',
-    bars: { linear: '76%', btree: '32%', bptree: '12%' },
-  },
-  top10: {
-    linearTime: '16.67 ms',
-    linearOps: '1,000,000회',
-    linearCaption: 'TOP 10 집계 완료 (전체 순회)',
-    btreeTime: '11 μs',
-    btreeOps: '500회',
-    btreeCaption: '정렬 키 기준 탐색 후 상위 결과 수집',
-    bptreeTime: '3 μs',
-    bptreeOps: '160회',
-    bptreeCaption: 'TOP 10 집계 완료 (리프 순회만으로 처리)',
-    lastSearch: 'TOP 10 Ranking',
-    subtitle: '상위 10명 샘플',
-    bars: { linear: '100%', btree: '28%', bptree: '18%' },
-  },
-};
+let currentMode = "single";
+let benchmarkData = null;
 
-let currentMode = 'single';
+function buildUrl(path) {
+  return new URL(path, apiBase).toString();
+}
 
 function formatNumber(value) {
-  return new Intl.NumberFormat('ko-KR').format(value);
+  return new Intl.NumberFormat("ko-KR").format(value);
 }
 
-// μs 단위 시간 포맷 (규약: ms 사용 금지, 0은 미측정)
 function formatTimeUs(us) {
-  if (!us || us <= 0) return '미측정';
-  return formatNumber(us) + ' μs';
-}
-
-// sizes 배열에서 현재 선택된 데이터셋 크기의 인덱스 반환
-function getSizeIndex(sizeValue) {
-  if (!realData) return -1;
-  return realData.sizes.indexOf(Number(sizeValue));
-}
-
-// 단일 탐색 모드일 때만 ID 입력 박스 표시
-function updateIdInputVisibility() {
-  idInputWrap.style.display = (currentMode === 'single') ? 'block' : 'none';
-}
-
-// 현재 입력된 ID 반환 (없으면 데이터셋 중간값 사용)
-function getTargetId() {
-  const val = parseInt(targetIdInput.value, 10);
-  const size = Number(datasetSize.value);
-  return (val > 0) ? val : Math.floor(size / 2);
-}
-
-// results.json 비동기 로드
-function loadRealData() {
-  return fetch('/assets/results.json')
-    .then(function (res) {
-      if (!res.ok) throw new Error('fetch 실패: ' + res.status);
-      return res.json();
-    })
-    .then(function (data) {
-      // sizes 배열과 single/range 키가 있어야 유효한 스키마
-      if (data && Array.isArray(data.sizes) && data.single && data.range) {
-        realData = data;
-        hasRealData = true;
-      }
-    })
-    .catch(function () {
-      // 로드 실패 시 preset으로 폴백 (콘솔 경고만 출력)
-      console.warn('results.json 로드 실패 — 샘플 데이터로 표시합니다.');
-    });
-}
-
-// 실측값을 결과 카드에 반영 (single / range 모드 전용)
-// top10 모드는 JSON 스키마에 없으므로 preset 사용
-function applyRealData(mode, sizeIdx) {
-  const modeMap = { single: 'single', range: 'range' };
-  const key = modeMap[mode];
-  if (!key || sizeIdx < 0) return false;
-
-  const src = realData[key];
-  const linearUs  = src.linear[sizeIdx];
-  const btreeUs   = src.btree[sizeIdx];
-  const bptreeUs  = src.bptree[sizeIdx];
-
-  // 셋 다 미측정(0)이면 실측 데이터 미사용으로 간주
-  if (!linearUs && !btreeUs && !bptreeUs) return false;
-
-  // 소요 시간 반영
-  resultEls.linearTime.textContent  = formatTimeUs(linearUs);
-  resultEls.btreeTime.textContent   = formatTimeUs(btreeUs);
-  resultEls.bptreeTime.textContent  = formatTimeUs(bptreeUs);
-
-  // 비교 횟수는 JSON 스키마에 없으므로 '미측정' 표시
-  resultEls.linearOps.textContent  = '미측정';
-  resultEls.btreeOps.textContent   = '미측정';
-  resultEls.bptreeOps.textContent  = '미측정';
-
-  // 캡션 갱신
-  const size = formatNumber(realData.sizes[sizeIdx]);
-  resultEls.linearCaption.textContent  = size + '건 선형 탐색 실측값';
-  resultEls.btreeCaption.textContent   = size + '건 B 트리 탐색 실측값';
-  resultEls.bptreeCaption.textContent  = size + '건 B+ 트리 탐색 실측값';
-
-  // 진행 바: 선형 기준 100%, 나머지 비례
-  const maxUs = Math.max(linearUs, btreeUs, bptreeUs, 1);
-  resultEls.linearBar.style.width  = Math.round((linearUs  / maxUs) * 100) + '%';
-  resultEls.btreeBar.style.width   = Math.round((btreeUs   / maxUs) * 100) + '%';
-  resultEls.bptreeBar.style.width  = Math.round((bptreeUs  / maxUs) * 100) + '%';
-
-  // 마지막 탐색 / 서브타이틀 갱신
-  if (mode === 'single') {
-    const tid = formatNumber(getTargetId());
-    summaryEls.lastSearch.textContent    = 'ID #' + tid;
-    resultEls.linearCaption.textContent  = 'ID #' + tid + ' 선형 탐색 실측값 (' + size + '건)';
-    resultEls.btreeCaption.textContent   = 'ID #' + tid + ' B 트리 탐색 실측값 (' + size + '건)';
-    resultEls.bptreeCaption.textContent  = 'ID #' + tid + ' B+ 트리 탐색 실측값 (' + size + '건)';
-  } else {
-    summaryEls.lastSearch.textContent    = size + '건 범위 탐색';
+  if (typeof us !== "number") {
+    return "미측정";
   }
-  summaryEls.tableSubtitle.textContent = '실측값 기준 (' + size + '건)';
-
-  return true;
+  return `${us.toFixed(3)} μs`;
 }
 
-function renderTable(rows) {
-  rankingBody.innerHTML = rows
-    .map(
-      (player, index) => `
-        <tr>
-          <td>${index + 1}</td>
-          <td>#${formatNumber(player.id)}</td>
-          <td>
-            <div class="player-name">
-              <span>${player.name}</span>
-              <span class="name-bar" style="width:${player.width}px"></span>
-            </div>
-          </td>
-          <td>${formatNumber(player.score)}</td>
-          <td><span class="tier-badge">${player.tier}</span></td>
-        </tr>
-      `
-    )
-    .join("");
+function estimateTreeHeight(count) {
+  if (count <= 100000) {
+    return "3";
+  }
+  if (count <= 1000000) {
+    return "4";
+  }
+  return "5";
 }
 
 function updateSummary(count) {
   summaryEls.count.textContent = formatNumber(Number(count));
-  summaryEls.height.textContent = count === "100000" ? "3" : count === "500000" ? "4" : "4";
+  summaryEls.height.textContent = estimateTreeHeight(Number(count));
 }
 
-function applyPreset() {
-  // 실측 데이터가 있으면 우선 적용 (single / range 모드)
-  if (hasRealData) {
-    const sizeIdx = getSizeIndex(datasetSize.value);
-    if (applyRealData(currentMode, sizeIdx)) return;
+function updateIdInputVisibility() {
+  idInputWrap.style.display = currentMode === "single" ? "block" : "none";
+}
+
+function getTargetId() {
+  const value = Number(targetIdInput.value);
+  const count = Number(datasetSize.value);
+  return Number.isInteger(value) && value > 0 ? value : Math.floor(count / 2);
+}
+
+async function fetchJson(url, label) {
+  const response = await fetch(url, { cache: "no-store" });
+  const text = await response.text();
+
+  if (!response.ok) {
+    let payload = null;
+
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      payload = null;
+    }
+
+    throw new Error(
+      payload && payload.message
+        ? `${label}: ${payload.message}`
+        : `${label}: ${response.status} ${response.statusText}`
+    );
   }
 
-  // 실측 없거나 top10 모드 → preset 폴백
-  const preset = presets[currentMode];
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${label}: ${text}`);
+  }
+}
 
-  resultEls.linearTime.textContent = preset.linearTime;
-  resultEls.linearOps.textContent = preset.linearOps;
-  resultEls.linearCaption.textContent = preset.linearCaption;
-  resultEls.linearBar.style.width = preset.bars.linear;
+async function ensureDataset(count) {
+  if (benchmarkData && benchmarkData.meta && Number(benchmarkData.meta.dataset_size) === Number(count)) {
+    return benchmarkData;
+  }
 
-  resultEls.btreeTime.textContent = preset.btreeTime;
-  resultEls.btreeOps.textContent = preset.btreeOps;
-  resultEls.btreeCaption.textContent = preset.btreeCaption;
-  resultEls.btreeBar.style.width = preset.bars.btree;
+  runButton.textContent = "CSV 생성 및 벤치마크 실행 중...";
 
-  resultEls.bptreeTime.textContent = preset.bptreeTime;
-  resultEls.bptreeOps.textContent = preset.bptreeOps;
-  resultEls.bptreeCaption.textContent = preset.bptreeCaption;
-  resultEls.bptreeBar.style.width = preset.bars.bptree;
+  const generated = await fetchJson(buildUrl(`api/generate?count=${count}`), "데이터 생성 실패");
+  if (!generated.ok) {
+    throw new Error(generated.message || "데이터 생성 실패");
+  }
 
-  // 단일 탐색 모드면 입력된 ID를 lastSearch에 반영
-  if (currentMode === 'single') {
-    summaryEls.lastSearch.textContent = 'ID #' + formatNumber(getTargetId());
+  benchmarkData = await fetchJson(
+    buildUrl(`assets/results.json?ts=${Date.now()}`),
+    "results.json 로드 실패"
+  );
+  return benchmarkData;
+}
+
+function setProgressBars(values) {
+  const maxValue = Math.max(values.linear, values.btree, values.bptree, 0.001);
+  resultEls.linearBar.style.width = `${Math.max(10, Math.round((values.linear / maxValue) * 100))}%`;
+  resultEls.btreeBar.style.width = `${Math.max(10, Math.round((values.btree / maxValue) * 100))}%`;
+  resultEls.bptreeBar.style.width = `${Math.max(10, Math.round((values.bptree / maxValue) * 100))}%`;
+}
+
+function renderRows(rows) {
+  rankingBody.innerHTML = rows.map((player, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>#${formatNumber(player.id)}</td>
+      <td>
+        <div class="player-name">
+          <span>${player.name}</span>
+          <span class="name-bar" style="width:${player.width || 96}px"></span>
+        </div>
+      </td>
+      <td>${formatNumber(player.score)}</td>
+      <td><span class="tier-badge">${player.tier}</span></td>
+    </tr>
+  `).join("");
+}
+
+function renderTopPlayers(players) {
+  const rows = (players || []).map((player, index) => ({
+    ...player,
+    width: 76 + ((10 - index) * 6),
+  }));
+
+  renderRows(rows);
+  summaryEls.tableSubtitle.textContent = "상위 10명 샘플";
+  summaryEls.lastSearch.textContent = "TOP 10 Ranking";
+}
+
+function renderRange(benchmark) {
+  const range = benchmark.range_search;
+  const count = benchmark.meta.dataset_size;
+
+  resultEls.linearTime.textContent = formatTimeUs(range.linear.avg_us);
+  resultEls.btreeTime.textContent = formatTimeUs(range.btree.avg_us);
+  resultEls.bptreeTime.textContent = formatTimeUs(range.bptree.avg_us);
+
+  resultEls.linearOps.textContent = `${formatNumber(range.count)}건`;
+  resultEls.btreeOps.textContent = `${estimateTreeHeight(count)}단계 + 범위`;
+  resultEls.bptreeOps.textContent = `${formatNumber(range.count)}개 리프`;
+
+  resultEls.linearCaption.textContent = `${formatNumber(range.lo)}~${formatNumber(range.hi)} 범위를 선형 탐색으로 확인`;
+  resultEls.btreeCaption.textContent = `${formatNumber(range.lo)}~${formatNumber(range.hi)} 범위를 B 트리로 분기`;
+  resultEls.bptreeCaption.textContent = `${formatNumber(range.lo)}~${formatNumber(range.hi)} 범위를 연결된 리프로 순회`;
+
+  setProgressBars({
+    linear: range.linear.avg_us,
+    btree: range.btree.avg_us,
+    bptree: range.bptree.avg_us,
+  });
+
+  summaryEls.lastSearch.textContent = `ID #${formatNumber(range.lo)} ~ ${formatNumber(range.hi)}`;
+  summaryEls.tableSubtitle.textContent = "범위 탐색 기준 상위 10명 샘플";
+  renderTopPlayers(benchmark.top_players);
+}
+
+function renderSingle(payload, benchmark) {
+  const count = benchmark.meta.dataset_size;
+  const targetId = payload.target_id;
+
+  resultEls.linearTime.textContent = formatTimeUs(payload.timings.linear_us);
+  resultEls.btreeTime.textContent = formatTimeUs(payload.timings.btree_us);
+  resultEls.bptreeTime.textContent = formatTimeUs(payload.timings.bptree_us);
+
+  resultEls.linearOps.textContent = `${formatNumber(count)}회`;
+  resultEls.btreeOps.textContent = `${estimateTreeHeight(count)}단계`;
+  resultEls.bptreeOps.textContent = `${estimateTreeHeight(count)}단계`;
+
+  resultEls.linearCaption.textContent = `ID #${formatNumber(targetId)}를 찾기 위해 선형 탐색 수행`;
+  resultEls.btreeCaption.textContent = `ID #${formatNumber(targetId)}를 B 트리 분기로 탐색`;
+  resultEls.bptreeCaption.textContent = `ID #${formatNumber(targetId)}를 B+ 트리 리프에서 탐색`;
+
+  setProgressBars({
+    linear: payload.timings.linear_us,
+    btree: payload.timings.btree_us,
+    bptree: payload.timings.bptree_us,
+  });
+
+  summaryEls.lastSearch.textContent = `ID #${formatNumber(targetId)}`;
+
+  if (payload.player) {
+    summaryEls.tableSubtitle.textContent = "검색 결과 1건";
+    renderRows([{
+      ...payload.player,
+      width: 120,
+    }]);
   } else {
-    summaryEls.lastSearch.textContent = preset.lastSearch;
+    summaryEls.tableSubtitle.textContent = "검색 결과 없음";
+    rankingBody.innerHTML = `
+      <tr>
+        <td colspan="5">ID #${formatNumber(targetId)} 에 해당하는 플레이어가 없습니다.</td>
+      </tr>
+    `;
   }
-  summaryEls.tableSubtitle.textContent = preset.subtitle;
 }
 
-modeTabs.forEach(function (button) {
-  button.addEventListener('click', function () {
+async function runCurrentMode() {
+  const count = Number(datasetSize.value);
+  updateSummary(count);
+
+  try {
+    const benchmark = await ensureDataset(count);
+
+    if (currentMode === "single") {
+      const targetId = getTargetId();
+      runButton.textContent = "탐색 실행 중...";
+      const payload = await fetchJson(buildUrl(`api/search?id=${targetId}`), "검색 실패");
+      if (!payload.ok) {
+        throw new Error(payload.message || "검색 실패");
+      }
+      renderSingle(payload, benchmark);
+    } else if (currentMode === "range") {
+      renderRange(benchmark);
+    } else {
+      resultEls.linearTime.textContent = formatTimeUs(benchmark.single_search.linear.avg_us);
+      resultEls.btreeTime.textContent = formatTimeUs(benchmark.single_search.btree.avg_us);
+      resultEls.bptreeTime.textContent = formatTimeUs(benchmark.single_search.bptree.avg_us);
+
+      resultEls.linearOps.textContent = `${formatNumber(benchmark.meta.dataset_size)}회`;
+      resultEls.btreeOps.textContent = `${estimateTreeHeight(benchmark.meta.dataset_size)}단계`;
+      resultEls.bptreeOps.textContent = `${estimateTreeHeight(benchmark.meta.dataset_size)}단계`;
+
+      resultEls.linearCaption.textContent = "TOP 10 집계를 위해 전체 데이터를 순회";
+      resultEls.btreeCaption.textContent = "정렬된 구조를 바탕으로 상위권 정보를 확인";
+      resultEls.bptreeCaption.textContent = "리프 구간을 활용해 상위권 정보를 빠르게 확인";
+
+      setProgressBars({
+        linear: benchmark.single_search.linear.avg_us,
+        btree: benchmark.single_search.btree.avg_us,
+        bptree: benchmark.single_search.bptree.avg_us,
+      });
+
+      renderTopPlayers(benchmark.top_players);
+    }
+  } catch (error) {
+    window.alert(error.message || "실행 중 오류가 발생했습니다.");
+  } finally {
+    runButton.textContent = "탐색 실행";
+  }
+}
+
+modeTabs.forEach((button) => {
+  button.addEventListener("click", () => {
     currentMode = button.dataset.mode;
-    modeTabs.forEach(function (tab) { tab.classList.toggle('active', tab === button); });
+    modeTabs.forEach((tab) => tab.classList.toggle("active", tab === button));
     updateIdInputVisibility();
-    applyPreset();
   });
 });
 
@@ -265,16 +277,17 @@ datasetSize.addEventListener("change", () => {
   updateSummary(datasetSize.value);
 });
 
-runButton.addEventListener("click", () => {
-  updateSummary(datasetSize.value);
-  applyPreset();
-  renderTable(topPlayers);
+runButton.addEventListener("click", runCurrentMode);
+targetIdInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && currentMode === "single") {
+    runCurrentMode();
+  }
 });
 
-// 초기화: results.json 로드 후 UI 갱신
-loadRealData().then(function () {
-  updateIdInputVisibility();
-  updateSummary(datasetSize.value);
-  applyPreset();
-  renderTable(topPlayers);
-});
+updateIdInputVisibility();
+updateSummary(datasetSize.value);
+renderRows([
+  { id: 91823, name: "ShadowBlade", score: 9980, tier: "챌린저", width: 120 },
+  { id: 445221, name: "NightFury", score: 9870, tier: "챌린저", width: 110 },
+  { id: 103942, name: "CrimsonAce", score: 9750, tier: "챌린저", width: 100 },
+]);
