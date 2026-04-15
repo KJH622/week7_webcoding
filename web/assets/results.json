@@ -1,30 +1,30 @@
 {
   "meta": {
-    "generated_at": "2026-04-15 19:46:52",
+    "generated_at": "2026-04-15 20:23:22",
     "dataset_size": 1000000,
     "iterations": 5
   },
   "single_search": {
     "target_id": 500000,
-    "linear": {"avg_us": 333.400, "ops": 500000},
-    "btree": {"avg_us": 0.400, "ops": 37},
-    "bptree": {"avg_us": 0.400, "ops": 37}
+    "linear": {"avg_us": 323.400, "ops": 500000},
+    "btree": {"avg_us": 1.000, "ops": 37},
+    "bptree": {"avg_us": 0.600, "ops": 37}
   },
   "name_bridge_search": {
     "target_name": "StarlightX_9999",
     "resolved_id": 10000,
     "note": "name lookup is resolved by linear scan first, then B-Tree/B+Tree search reuse the resolved id",
-    "linear_name": {"avg_us": 40.000, "ops": 10000},
-    "btree_by_id": {"avg_us": 0.200, "ops": 36},
-    "bptree_by_id": {"avg_us": 0.400, "ops": 36}
+    "linear_name": {"avg_us": 38.200, "ops": 10000},
+    "btree_by_id": {"avg_us": 0.400, "ops": 36},
+    "bptree_by_id": {"avg_us": 0.200, "ops": 36}
   },
   "range_search": {
     "lo": 500000,
     "hi": 500999,
     "count": 1000,
-    "linear": {"avg_us": 741.000, "ops": 1000000},
-    "btree": {"avg_us": 0.800, "ops": 1115},
-    "bptree": {"avg_us": 1.400, "ops": 1037}
+    "linear": {"avg_us": 656.600, "ops": 1000000},
+    "btree": {"avg_us": 0.600, "ops": 1115},
+    "bptree": {"avg_us": 1.200, "ops": 1037}
   },
   "top_players": [
     {"id": 3164, "nickname": "StarlightX_3163", "win_rate": 98.99, "rank": "챌린저"},

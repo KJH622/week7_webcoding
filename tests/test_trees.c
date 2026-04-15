@@ -324,6 +324,45 @@ static void test_query_server_json_escaping(void) {
     remove(output_path);
 }
 
+static void test_query_server_name_search(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[384];
+    char *output = NULL;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[query_server name search]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "query_server_name_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "query_server_name_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'search_name Player_15\\nquit\\n' | ./bin/query_server %s > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    CHECK(wrote_fixture, "fixture csv created for query_server name search");
+    CHECK(ran_command, "query_server name search command runs against fixture");
+    CHECK(output && strstr(output, "\"search_type\":\"name\"") != NULL, "query_server marks name-based search payloads");
+    CHECK(output && strstr(output, "\"target_name\":\"Player_15\"") != NULL, "query_server echoes the searched nickname");
+    CHECK(output && strstr(output, "\"resolved_id\":15") != NULL, "query_server resolves nickname to the matching id");
+    CHECK(output && strstr(output, "\"nickname\":\"Player_15\"") != NULL, "query_server returns the matched player for nickname search");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
 static void test_bench_json_escaping(void) {
     char csv_path[128];
     char json_path[128];
@@ -693,6 +732,7 @@ int main(void) {
     test_btree_duplicate_key_update_after_split();
     test_query_demo_json_escaping();
     test_query_server_json_escaping();
+    test_query_server_name_search();
     test_bench_json_escaping();
     test_query_server_top10_realtime();
     test_query_server_range_pagination();
