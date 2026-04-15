@@ -1,6 +1,12 @@
 #include "btree.h"
 
 #include <stdlib.h>
+#include <string.h>
+
+/* 별도 정의가 없을 때 사용할 기본 연산 횟수 카운터 */
+__attribute__((weak)) long long g_op_count = 0;
+
+/* -------------------------------------------------- 내부 헬퍼 */
 
 typedef struct {
     int did_split;
@@ -35,9 +41,27 @@ static int lower_bound_keys(const int *keys, int count, int key) {
     return lo;
 }
 
+static int upper_bound_keys(const int *keys, int count, int key) {
+    int lo = 0;
+    int hi = count;
+
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (keys[mid] <= key) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    return lo;
+}
+
 static BTInsertResult insert_recursive(BTNode *node, int key, void *record_ptr) {
     BTInsertResult result = {0, 0, NULL, NULL};
-    int idx = lower_bound_keys(node->keys, node->num_keys, key);
+    int idx = node->is_leaf
+        ? lower_bound_keys(node->keys, node->num_keys, key)
+        : upper_bound_keys(node->keys, node->num_keys, key);
 
     if (node->is_leaf) {
         int i;
@@ -60,6 +84,10 @@ static BTInsertResult insert_recursive(BTNode *node, int key, void *record_ptr) 
             return result;
         }
     } else {
+        if (idx > 0 && node->keys[idx - 1] == key) {
+            node->ptrs[idx - 1] = record_ptr;
+        }
+
         BTInsertResult child_result = insert_recursive(node->children[idx], key, record_ptr);
         int i;
 
@@ -137,17 +165,28 @@ static void *search_recursive(BTNode *node, int key) {
         return NULL;
     }
 
-    idx = lower_bound_keys(node->keys, node->num_keys, key);
-
+    idx = 0;
     if (node->is_leaf) {
+        while (idx < node->num_keys && node->keys[idx] < key) {
+            g_op_count++;
+            idx++;
+        }
+        if (idx < node->num_keys) {
+            g_op_count++;
+        }
+
         if (idx < node->num_keys && node->keys[idx] == key) {
             return node->ptrs[idx];
         }
         return NULL;
     }
 
-    if (idx < node->num_keys && node->keys[idx] == key) {
-        return node->ptrs[idx];
+    while (idx < node->num_keys && node->keys[idx] <= key) {
+        g_op_count++;
+        idx++;
+    }
+    if (idx < node->num_keys) {
+        g_op_count++;
     }
 
     return search_recursive(node->children[idx], key);
@@ -163,6 +202,7 @@ static int range_recursive(BTNode *node, int lo, int hi) {
 
     if (node->is_leaf) {
         for (i = 0; i < node->num_keys; ++i) {
+            g_op_count++;
             if (node->keys[i] >= lo && node->keys[i] <= hi) {
                 count += 1;
             }
@@ -170,19 +210,26 @@ static int range_recursive(BTNode *node, int lo, int hi) {
         return count;
     }
 
-    for (i = 0; i < node->num_keys; ++i) {
-        if (lo < node->keys[i]) {
-            count += range_recursive(node->children[i], lo, hi);
-        }
-        if (node->keys[i] >= lo && node->keys[i] <= hi) {
-            count += 1;
-        }
-        if (node->keys[i] > hi) {
-            return count;
-        }
+    i = 0;
+    while (i < node->num_keys && node->keys[i] <= lo) {
+        g_op_count++;
+        i++;
+    }
+    if (i < node->num_keys) {
+        g_op_count++;
     }
 
-    count += range_recursive(node->children[node->num_keys], lo, hi);
+    count += range_recursive(node->children[i], lo, hi);
+
+    while (i < node->num_keys && node->keys[i] <= hi) {
+        g_op_count++;
+        i++;
+        count += range_recursive(node->children[i], lo, hi);
+    }
+    if (i < node->num_keys) {
+        g_op_count++;
+    }
+
     return count;
 }
 
