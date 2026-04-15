@@ -44,18 +44,26 @@
         </div>
 
         <div class="control-row">
-          <label class="check-wrap">
-            <input id="fast-mode" type="checkbox" />
-            <span></span>
-          </label>
+          <div class="control-right">
+            <label class="select-wrap">
+              <select id="dataset-size">
+                <option value="100000">10만 명</option>
+                <option value="500000">50만 명</option>
+                <option value="1000000" selected>100만 명</option>
+                <option value="5000000">500만 명</option>
+              </select>
+            </label>
 
-          <label class="select-wrap">
-            <select id="dataset-size">
-              <option value="100000">10만 명</option>
-              <option value="500000">50만 명</option>
-              <option value="1000000" selected>100만 명</option>
-            </select>
-          </label>
+            <div class="id-input-wrap" id="id-input-wrap">
+              <input
+                type="number"
+                id="target-id"
+                class="id-input"
+                placeholder="탐색할 Player ID 입력 (기본: 데이터셋 중간값)"
+                min="1"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="mode-tabs" id="mode-tabs">
