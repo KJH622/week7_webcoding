@@ -1,7 +1,7 @@
 #ifndef BPLUS_TREE_H
 #define BPLUS_TREE_H
 
-#define BP_ORDER 4   /* 노드당 최대 키 수. 필요에 따라 조정 */
+#define BP_ORDER 32  /* 노드당 최대 키 수. 100만 건 기준 트리 높이 ~4 레벨 */
 
 typedef struct BPLeaf {
     int            keys[BP_ORDER];
