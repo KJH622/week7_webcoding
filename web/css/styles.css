@@ -188,19 +188,9 @@ button, select, input {
   margin-top: 18px;
 }
 
-.check-wrap {
-  position: relative;
-  width: 40px;
-  height: 40px;
-}
 
-.check-wrap input {
-  opacity: 0;
-  position: absolute;
-}
-
-.check-wrap span,
 .select-wrap select,
+.id-input,
 .mode-tab,
 .run-btn,
 .caption {
@@ -208,20 +198,10 @@ button, select, input {
   background: rgba(35, 34, 32, 0.72);
 }
 
-.check-wrap span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 12px;
-}
 
-.check-wrap input:checked + span {
-  background: linear-gradient(180deg, rgba(125, 115, 231, 0.35), rgba(125, 115, 231, 0.2));
-  box-shadow: inset 0 0 0 1px rgba(125, 115, 231, 0.55);
-}
 
 .select-wrap {
-  flex: 1;
+  width: 100%;
 }
 
 .select-wrap select {
@@ -232,10 +212,51 @@ button, select, input {
   appearance: none;
 }
 
+/* 체크박스 우측: select + id-input 세로 배치 */
+.control-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .mode-tabs {
   gap: 12px;
   margin-top: 14px;
   flex-wrap: wrap;
+}
+
+/* 단일 탐색 ID 입력 박스 — select와 동일한 스타일 */
+.id-input-wrap {
+  width: 100%;
+}
+
+.id-input {
+  width: 100%;
+  color: var(--text);
+  border-radius: 14px;
+  padding: 16px 18px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.id-input::placeholder {
+  color: var(--muted);
+}
+
+.id-input:focus {
+  outline: none;
+  border-color: rgba(125, 115, 231, 0.68);
+  box-shadow: 0 0 0 1px rgba(125, 115, 231, 0.25);
+}
+
+/* 숫자 스피너 제거 */
+.id-input::-webkit-outer-spin-button,
+.id-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.id-input[type=number] {
+  -moz-appearance: textfield;
 }
 
 .mode-tab,
