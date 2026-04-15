@@ -4,6 +4,9 @@ const datasetSize = document.getElementById('dataset-size');
 const modeTabs = [...document.querySelectorAll('.mode-tab')];
 const idInputWrap = document.getElementById('id-input-wrap');
 const targetIdInput = document.getElementById('target-id');
+const rangeInputWrap = document.getElementById('range-input-wrap');
+const rangeLoInput = document.getElementById('range-lo');
+const rangeHiInput = document.getElementById('range-hi');
 
 
 // 실측 데이터 (results.json 로드 후 저장)
@@ -168,9 +171,10 @@ function getSizeIndex(sizeValue) {
   return realData.sizes.indexOf(Number(sizeValue));
 }
 
-// 단일 탐색 모드일 때만 ID 입력 박스 표시
+// 모드에 따라 입력창 표시/숨김
 function updateIdInputVisibility() {
-  idInputWrap.style.display = (currentMode === 'single') ? 'block' : 'none';
+  idInputWrap.style.display    = (currentMode === 'single') ? 'block' : 'none';
+  rangeInputWrap.style.display = (currentMode === 'range')  ? 'flex'  : 'none';
 }
 
 // 현재 입력된 ID 반환 (없으면 데이터셋 중간값 사용)
@@ -178,6 +182,79 @@ function getTargetId() {
   const val = parseInt(targetIdInput.value, 10);
   const size = Number(datasetSize.value);
   return (val > 0) ? val : Math.floor(size / 2);
+}
+
+// 범위 탐색 lo/hi 반환 (없으면 규약 기본값: 1 ~ size*0.01)
+function getRangeLo() {
+  const val = parseInt(rangeLoInput.value, 10);
+  return (val > 0) ? val : 1;
+}
+
+function getRangeHi() {
+  const val = parseInt(rangeHiInput.value, 10);
+  const size = Number(datasetSize.value);
+  return (val > 0) ? val : Math.floor(size * 0.01);
+}
+
+// /search 엔드포인트로 실시간 탐색 요청
+function fetchSearch() {
+  const mode = currentMode;
+  const size = datasetSize.value;
+  let url = '/search?mode=' + mode + '&size=' + size;
+
+  if (mode === 'single') {
+    url += '&target=' + getTargetId();
+  } else {
+    url += '&lo=' + getRangeLo() + '&hi=' + getRangeHi();
+  }
+
+  return fetch(url)
+    .then(function (res) {
+      if (!res.ok) throw new Error('서버 오류: ' + res.status);
+      return res.json();
+    })
+    .then(function (data) {
+      if (data.error) throw new Error(data.error);
+      return data;
+    });
+}
+
+// 실시간 탐색 결과를 UI에 반영
+function applySearchResult(data) {
+  // 소요 시간
+  resultEls.linearTime.textContent  = formatTimeUs(data.linear_time,  true);
+  resultEls.btreeTime.textContent   = formatTimeUs(data.btree_time,   true);
+  resultEls.bptreeTime.textContent  = formatTimeUs(data.bptree_time,  true);
+
+  // 비교 횟수
+  resultEls.linearOps.textContent  = data.linear_ops  > 0 ? formatNumber(data.linear_ops)  + '회' : '미측정';
+  resultEls.btreeOps.textContent   = data.btree_ops   > 0 ? formatNumber(data.btree_ops)   + '회' : '미측정';
+  resultEls.bptreeOps.textContent  = data.bptree_ops  > 0 ? formatNumber(data.bptree_ops)  + '회' : '미측정';
+
+  // 진행 바
+  const maxUs = Math.max(data.linear_time, data.btree_time, data.bptree_time, 1);
+  resultEls.linearBar.style.width  = Math.round((data.linear_time  / maxUs) * 100) + '%';
+  resultEls.btreeBar.style.width   = Math.round((data.btree_time   / maxUs) * 100) + '%';
+  resultEls.bptreeBar.style.width  = Math.round((data.bptree_time  / maxUs) * 100) + '%';
+
+  // 캡션 및 요약
+  const n = formatNumber(data.size);
+  if (data.mode === 'single') {
+    const tid = formatNumber(data.target);
+    summaryEls.lastSearch.textContent    = 'ID #' + tid;
+    summaryEls.tableSubtitle.textContent = '실측값 기준 (' + n + '건)';
+    resultEls.linearCaption.textContent  = 'ID #' + tid + ' 선형 탐색 실측값 (' + n + '건)';
+    resultEls.btreeCaption.textContent   = 'ID #' + tid + ' B 트리 탐색 실측값 (' + n + '건)';
+    resultEls.bptreeCaption.textContent  = 'ID #' + tid + ' B+ 트리 탐색 실측값 (' + n + '건)';
+  } else {
+    const lo = formatNumber(data.lo);
+    const hi = formatNumber(data.hi);
+    summaryEls.lastSearch.textContent    = 'ID #' + lo + ' ~ ' + hi;
+    summaryEls.tableSubtitle.textContent = '실측값 기준 (' + n + '건)';
+    resultEls.linearCaption.textContent  = lo + '~' + hi + ' 선형 탐색 실측값 (' + n + '건)';
+    resultEls.btreeCaption.textContent   = lo + '~' + hi + ' B 트리 탐색 실측값 (' + n + '건)';
+    resultEls.bptreeCaption.textContent  = lo + '~' + hi + ' B+ 트리 탐색 실측값 (' + n + '건)';
+  }
 }
 
 // results.json 비동기 로드
@@ -248,7 +325,9 @@ function applyRealData(mode, sizeIdx) {
     resultEls.btreeCaption.textContent   = 'ID #' + tid + ' B 트리 탐색 실측값 (' + size + '건)';
     resultEls.bptreeCaption.textContent  = 'ID #' + tid + ' B+ 트리 탐색 실측값 (' + size + '건)';
   } else {
-    summaryEls.lastSearch.textContent    = size + '건 범위 탐색';
+    const lo = formatNumber(getRangeLo());
+    const hi = formatNumber(getRangeHi());
+    summaryEls.lastSearch.textContent = 'ID #' + lo + ' ~ ' + hi;
   }
   summaryEls.tableSubtitle.textContent = '실측값 기준 (' + size + '건)';
 
@@ -309,9 +388,11 @@ function applyPreset() {
   resultEls.bptreeCaption.textContent = preset.bptreeCaption;
   resultEls.bptreeBar.style.width = preset.bars.bptree;
 
-  // 단일 탐색 모드면 입력된 ID를 lastSearch에 반영
+  // 모드별 lastSearch 반영
   if (currentMode === 'single') {
     summaryEls.lastSearch.textContent = 'ID #' + formatNumber(getTargetId());
+  } else if (currentMode === 'range') {
+    summaryEls.lastSearch.textContent = 'ID #' + formatNumber(getRangeLo()) + ' ~ ' + formatNumber(getRangeHi());
   } else {
     summaryEls.lastSearch.textContent = preset.lastSearch;
   }
@@ -332,10 +413,35 @@ datasetSize.addEventListener('change', function () {
   applyPreset();
 });
 
-runButton.addEventListener("click", () => {
+runButton.addEventListener('click', function () {
   updateSummary(datasetSize.value);
-  applyPreset();
   renderTable(topPlayers);
+
+  // top10 모드는 실시간 탐색 없음 → preset
+  if (currentMode === 'top10') {
+    applyPreset();
+    return;
+  }
+
+  // 로딩 상태
+  runButton.textContent = '탐색 중...';
+  runButton.disabled = true;
+  runButton.classList.add('loading');
+
+  fetchSearch()
+    .then(function (data) {
+      applySearchResult(data);
+    })
+    .catch(function (err) {
+      console.warn('실시간 탐색 실패, 사전 측정값 사용:', err.message);
+      applyPreset();
+    })
+    .then(function () {
+      // finally 대신 두 번째 .then으로 항상 실행
+      runButton.textContent = '탐색 실행';
+      runButton.disabled = false;
+      runButton.classList.remove('loading');
+    });
 });
 
 // 초기화: results.json 로드 후 UI 갱신

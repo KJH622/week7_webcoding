@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* benchmark.c에서 정의된 전역 연산 횟수 카운터 */
+extern long long g_op_count;
+
 /* -------------------------------------------------- 내부 헬퍼 */
 
 static BPLeaf *new_leaf(void) {
@@ -179,15 +182,19 @@ void *bptree_search(BPTree *tree, int key) {
     /* 루트부터 리프까지 내려가기 */
     while (!node->is_leaf) {
         int i = 0;
-        while (i < node->num_keys && key >= node->keys[i]) i++;
+        while (i < node->num_keys && key >= node->keys[i]) {
+            g_op_count++;          /* 내부 노드 키 비교 1회 */
+            i++;
+        }
         node = node->children[i];
     }
 
     /* 리프에서 키 탐색 */
     BPLeaf *leaf = node->leaf;
     for (int i = 0; i < leaf->num_keys; i++) {
+        g_op_count++;              /* 리프 키 비교 1회 */
         if (leaf->keys[i] == key) return leaf->ptrs[i];
-        if (leaf->keys[i] > key)  break;   /* 정렬되어 있으므로 조기 종료 */
+        if (leaf->keys[i] > key)  break;
     }
     return NULL;
 }
@@ -203,7 +210,10 @@ int bptree_range(BPTree *tree, int lo, int hi) {
     /* lo에 해당하는 리프 탐색 */
     while (!node->is_leaf) {
         int i = 0;
-        while (i < node->num_keys && lo >= node->keys[i]) i++;
+        while (i < node->num_keys && lo >= node->keys[i]) {
+            g_op_count++;          /* 내부 노드 키 비교 1회 */
+            i++;
+        }
         node = node->children[i];
     }
 
@@ -212,7 +222,8 @@ int bptree_range(BPTree *tree, int lo, int hi) {
     BPLeaf *leaf = node->leaf;
     while (leaf != NULL) {
         for (int i = 0; i < leaf->num_keys; i++) {
-            if (leaf->keys[i] > hi)  return count;  /* 범위 초과 → 종료 */
+            g_op_count++;          /* 리프 키 비교 1회 */
+            if (leaf->keys[i] > hi)  return count;
             if (leaf->keys[i] >= lo) count++;
         }
         leaf = leaf->next;

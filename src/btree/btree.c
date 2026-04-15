@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* benchmark.c에서 정의된 전역 연산 횟수 카운터 */
+extern long long g_op_count;
+
 /* -------------------------------------------------- 내부 헬퍼 */
 
 static BTNode *new_node(int is_leaf) {
@@ -140,12 +143,15 @@ void *btree_search(BTree *tree, int key) {
     BTNode *node = tree->root;
     while (node != NULL) {
         int i = 0;
-        while (i < node->num_keys && node->keys[i] < key)
+        while (i < node->num_keys && node->keys[i] < key) {
+            g_op_count++;          /* 키 비교 1회 */
             i++;
+        }
+        g_op_count++;              /* 최종 비교 (== 또는 범위 초과) */
         if (i < node->num_keys && node->keys[i] == key)
-            return node->ptrs[i];   /* 발견 */
+            return node->ptrs[i];
         if (node->is_leaf)
-            return NULL;            /* 리프까지 왔는데 없음 */
+            return NULL;
         node = node->children[i];
     }
     return NULL;
@@ -164,15 +170,13 @@ static int range_rec(BTNode *node, int lo, int hi) {
     int count = 0;
 
     for (int i = 0; i < node->num_keys; i++) {
-        /* children[i]에 범위 내 키가 있을 수 있으면 먼저 방문 */
         if (!node->is_leaf && lo < node->keys[i])
             count += range_rec(node->children[i], lo, hi);
 
-        /* hi 초과 → 이후는 볼 필요 없음 */
+        g_op_count++;              /* 키 비교 1회 */
         if (node->keys[i] > hi)
             return count;
 
-        /* 현재 키가 범위 안이면 카운트 */
         if (node->keys[i] >= lo)
             count++;
     }

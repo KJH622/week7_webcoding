@@ -4,7 +4,7 @@ CFLAGS = -Wall -O2 -std=c99
 SRC_DIR = src
 BIN_DIR = bin
 
-all: $(BIN_DIR) datagen bench
+all: $(BIN_DIR) datagen bench shell search
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -20,6 +20,22 @@ bench:
 		$(SRC_DIR)/benchmark/benchmark.c \
 		-o $(BIN_DIR)/bench
 
+shell:
+	$(CC) $(CFLAGS) \
+		$(SRC_DIR)/linear/linear_search.c \
+		$(SRC_DIR)/btree/btree.c \
+		$(SRC_DIR)/bplus_tree/bplus_tree.c \
+		$(SRC_DIR)/shell.c \
+		-o $(BIN_DIR)/shell
+
+search:
+	$(CC) $(CFLAGS) \
+		$(SRC_DIR)/linear/linear_search.c \
+		$(SRC_DIR)/btree/btree.c \
+		$(SRC_DIR)/bplus_tree/bplus_tree.c \
+		$(SRC_DIR)/search.c \
+		-o $(BIN_DIR)/search
+
 run:
 	./$(BIN_DIR)/datagen 1000000
 	./$(BIN_DIR)/bench
@@ -31,4 +47,4 @@ result:
 clean:
 	rm -rf $(BIN_DIR)
 
-.PHONY: all datagen bench run result clean
+.PHONY: all datagen bench shell search run result clean

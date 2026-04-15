@@ -26,9 +26,16 @@ static const char *get_tier(int score) {
     return "Silver";
 }
 
+/* 사용법: ./bin/datagen [레코드수] [출력경로]
+ * 기본값: 레코드수=1000000, 출력경로=data/players_{n}.csv */
 int main(int argc, char *argv[]) {
     int n = 1000000;
     if (argc >= 2) n = atoi(argv[1]);
+
+    /* 출력 경로: 인수로 지정하거나 data/players_{n}.csv 자동 생성 */
+    char default_path[64];
+    snprintf(default_path, sizeof(default_path), "data/players_%d.csv", n);
+    const char *out_path = (argc >= 3) ? argv[2] : default_path;
 
     srand((unsigned)time(NULL));
 
@@ -44,9 +51,30 @@ int main(int argc, char *argv[]) {
         strncpy(table[i].tier, get_tier(table[i].score), 16);
     }
 
-    printf("생성 완료. 샘플 출력 (처음 5개):\n");
+    /* CSV 파일 저장 */
+    FILE *fp = fopen(out_path, "w");
+    if (!fp) {
+        fprintf(stderr, "파일 열기 실패: %s\n", out_path);
+        free(table);
+        return 1;
+    }
+
+    /* 헤더 */
+    fprintf(fp, "id,name,score,tier\n");
+
+    /* 레코드 출력 */
+    for (int i = 0; i < n; i++) {
+        fprintf(fp, "%d,%s,%d,%s\n",
+                table[i].id, table[i].name, table[i].score, table[i].tier);
+    }
+    fclose(fp);
+
+    printf("저장 완료: %s (%d건)\n", out_path, n);
+
+    /* 샘플 5개 콘솔 출력 */
+    printf("\n샘플 (처음 5개):\n");
     printf("%-10s %-24s %-8s %s\n", "ID", "Name", "Score", "Tier");
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5 && i < n; i++) {
         printf("%-10d %-24s %-8d %s\n",
                table[i].id, table[i].name, table[i].score, table[i].tier);
     }
