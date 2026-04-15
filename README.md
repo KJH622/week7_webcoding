@@ -21,13 +21,22 @@
 ```
 gamerank-db/
 ├── src/
+│   ├── common/          # 공통 헤더 (player.h 등)
 │   ├── linear/          # 선형 탐색 구현
 │   ├── btree/           # B 트리 구현
 │   ├── bplus_tree/      # B+ 트리 구현
 │   └── benchmark/       # 성능 측정 코드
-├── demo/                # 벤치마크 시각화 데모 (HTML)
+├── web/                 # 벤치마크 시각화 데모
+│   ├── index.html       # 메인 페이지
+│   ├── css/             # 스타일시트
+│   │   └── styles.css
+│   ├── js/              # 클라이언트 스크립트
+│   │   └── app.js
+│   ├── assets/          # 결과 데이터 (results.json)
+│   └── server/          # 로컬 웹 서버
+│       └── server.pl
+├── tests/               # 트리 단위 테스트
 ├── docs/                # 개념 정리 문서
-├── assets/              # 이미지, 결과 데이터
 ├── Makefile
 └── README.md
 ```
