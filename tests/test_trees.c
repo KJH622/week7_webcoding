@@ -315,6 +315,8 @@ static void test_query_server_json_escaping(void) {
     CHECK(ran_command, "query_server runs against escaped fixture");
     CHECK(output && strstr(output, "\"nickname\":\"A\\\"B\"") != NULL, "query_server escapes quotes in nickname");
     CHECK(output && strstr(output, "\"rank\":\"Gold\\\\Tier\"") != NULL, "query_server escapes backslashes in rank");
+    CHECK(output && strstr(output, "\"player\":{\"id\":1") != NULL, "query_server search returns a valid player object");
+    CHECK(output && strstr(output, "\"player\":{{") == NULL, "query_server search avoids double object braces");
     CHECK(output && strstr(output, "\"nickname\":\"A\"B\"") == NULL, "query_server avoids raw quote breakage");
 
     free(output);

@@ -281,7 +281,7 @@ static void print_search_result(Player *players, int count, BTree *btree, BPTree
     printf("\"bptree_ops\":%lld,", bptree_ops_total / SEARCH_ITERS);
 
     if (linear_found && btree_found && bptree_found) {
-        printf("\"player\":{");
+        printf("\"player\":");
         print_player_json(linear_found);
     } else {
         printf("\"player\":null");
