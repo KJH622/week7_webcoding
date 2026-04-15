@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GameRank DB Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <h1>GameRank DB</h1>
+            <p>플레이어 랭킹 검색 시스템</p>
+          </div>
+        </div>
+        <p class="eyebrow">B+ Tree Index Demo</p>
+      </header>
+
+      <section class="hero-grid">
+        <article class="stat-card">
+          <p>총 플레이어 수</p>
+          <strong id="player-count">1,000,000</strong>
+        </article>
+        <article class="stat-card">
+          <p>인덱스 트리 높이</p>
+          <strong id="tree-height">4</strong>
+        </article>
+        <article class="stat-card">
+          <p>마지막 탐색</p>
+          <strong id="last-search">ID #432,484</strong>
+        </article>
+      </section>
+
+      <section class="panel controls">
+        <div class="section-head">
+          <h2>플레이어 검색</h2>
+        </div>
+
+        <div class="control-row">
+          <label class="check-wrap">
+            <input id="fast-mode" type="checkbox" />
+            <span></span>
+          </label>
+
+          <label class="select-wrap">
+            <select id="dataset-size">
+              <option value="100000">10만 명</option>
+              <option value="500000">50만 명</option>
+              <option value="1000000" selected>100만 명</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="mode-tabs" id="mode-tabs">
+          <button class="mode-tab active" data-mode="single">단일 탐색 (id = ?)</button>
+          <button class="mode-tab" data-mode="range">범위 탐색 (BETWEEN)</button>
+          <button class="mode-tab" data-mode="top10">TOP 10 랭킹</button>
+        </div>
+
+        <button class="run-btn" id="run-search">탐색 실행</button>
+      </section>
+
+      <section class="results-grid">
+        <article class="panel result-card linear">
+          <div class="card-head">
+            <h3>선형 탐색</h3>
+            <span class="pill">Linear</span>
+          </div>
+          <div class="metric-row">
+            <span>소요 시간</span>
+            <strong id="linear-time">16.67 ms</strong>
+          </div>
+          <div class="metric-row">
+            <span>비교 횟수</span>
+            <strong id="linear-ops">1,000,000회</strong>
+          </div>
+          <div class="progress-track"><span id="linear-bar"></span></div>
+          <p class="status done">완료</p>
+          <p class="caption" id="linear-caption">TOP 10 집계 완료 (전체 순회)</p>
+        </article>
+
+        <article class="panel result-card btree">
+          <div class="card-head">
+            <h3>B 트리</h3>
+            <span class="pill mint">B-Tree</span>
+          </div>
+          <div class="metric-row">
+            <span>소요 시간</span>
+            <strong id="btree-time">11 μs</strong>
+          </div>
+          <div class="metric-row">
+            <span>비교 횟수</span>
+            <strong id="btree-ops">500회</strong>
+          </div>
+          <div class="progress-track"><span id="btree-bar"></span></div>
+          <p class="status done">완료</p>
+          <p class="caption" id="btree-caption">TOP 10 집계 완료</p>
+        </article>
+
+        <article class="panel result-card bptree highlight">
+          <div class="card-head">
+            <h3>B+ 트리</h3>
+            <span class="pill violet">B+ Tree</span>
+          </div>
+          <div class="metric-row">
+            <span>소요 시간</span>
+            <strong id="bptree-time">3 μs</strong>
+          </div>
+          <div class="metric-row">
+            <span>비교 횟수</span>
+            <strong id="bptree-ops">160회</strong>
+          </div>
+          <div class="progress-track"><span id="bptree-bar"></span></div>
+          <p class="status done">완료</p>
+          <p class="caption" id="bptree-caption">TOP 10 집계 완료 (리프 순회만으로 처리)</p>
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="section-head">
+          <h2>랭킹 테이블 (샘플)</h2>
+          <p id="table-subtitle">상위 10명 샘플</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>순위</th>
+                <th>Player ID</th>
+                <th>닉네임</th>
+                <th>점수</th>
+                <th>티어</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
