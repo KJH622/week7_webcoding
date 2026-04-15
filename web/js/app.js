@@ -50,6 +50,21 @@ function formatTimeUs(us) {
   return `${us.toFixed(3)} μs`;
 }
 
+function formatOps(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "미측정";
+  }
+  return `${formatNumber(Math.round(value))}회`;
+}
+
+function formatWinRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "미측정";
+  }
+  return `${numeric.toFixed(2)}%`;
+}
+
 function estimateTreeHeight(count) {
   if (count <= 100000) {
     return "3";
@@ -172,12 +187,12 @@ function renderRows(rows) {
       <td>#${formatNumber(player.id)}</td>
       <td>
         <div class="player-name">
-          <span>${player.name}</span>
+          <span>${player.nickname || player.name}</span>
           <span class="name-bar" style="width:${player.width || 96}px"></span>
         </div>
       </td>
-      <td>${formatNumber(player.score)}</td>
-      <td><span class="tier-badge">${player.tier}</span></td>
+      <td>${formatWinRate(player.win_rate)}</td>
+      <td><span class="tier-badge">${player.rank}</span></td>
     </tr>
   `).join("");
 }
@@ -195,15 +210,14 @@ function renderTopPlayers(players) {
 
 function renderRange(benchmark) {
   const range = benchmark.range_search;
-  const count = benchmark.meta.dataset_size;
 
   resultEls.linearTime.textContent = formatTimeUs(range.linear.avg_us);
   resultEls.btreeTime.textContent = formatTimeUs(range.btree.avg_us);
   resultEls.bptreeTime.textContent = formatTimeUs(range.bptree.avg_us);
 
-  resultEls.linearOps.textContent = `${formatNumber(range.count)}건`;
-  resultEls.btreeOps.textContent = `${estimateTreeHeight(count)}단계 + 범위`;
-  resultEls.bptreeOps.textContent = `${formatNumber(range.count)}개 리프`;
+  resultEls.linearOps.textContent = formatOps(range.linear.ops);
+  resultEls.btreeOps.textContent = formatOps(range.btree.ops);
+  resultEls.bptreeOps.textContent = formatOps(range.bptree.ops);
 
   resultEls.linearCaption.textContent = `${formatNumber(range.lo)}~${formatNumber(range.hi)} 범위를 선형 탐색으로 확인`;
   resultEls.btreeCaption.textContent = `${formatNumber(range.lo)}~${formatNumber(range.hi)} 범위를 B 트리로 분기`;
@@ -226,9 +240,9 @@ function renderRangeRealtime(data, benchmark) {
   resultEls.btreeTime.textContent   = formatTimeUs(data.btree_time);
   resultEls.bptreeTime.textContent  = formatTimeUs(data.bptree_time);
 
-  resultEls.linearOps.textContent  = data.linear_ops  > 0 ? `${formatNumber(data.linear_ops)}회`  : "미측정";
-  resultEls.btreeOps.textContent   = data.btree_ops   > 0 ? `${formatNumber(data.btree_ops)}회`   : "미측정";
-  resultEls.bptreeOps.textContent  = data.bptree_ops  > 0 ? `${formatNumber(data.bptree_ops)}회`  : "미측정";
+  resultEls.linearOps.textContent  = formatOps(data.linear_ops);
+  resultEls.btreeOps.textContent   = formatOps(data.btree_ops);
+  resultEls.bptreeOps.textContent  = formatOps(data.bptree_ops);
 
   const lo = formatNumber(data.lo);
   const hi = formatNumber(data.hi);
@@ -248,16 +262,15 @@ function renderRangeRealtime(data, benchmark) {
 }
 
 function renderSingle(payload, benchmark) {
-  const count = benchmark.meta.dataset_size;
   const targetId = payload.target_id;
 
   resultEls.linearTime.textContent = formatTimeUs(payload.timings.linear_us);
   resultEls.btreeTime.textContent = formatTimeUs(payload.timings.btree_us);
   resultEls.bptreeTime.textContent = formatTimeUs(payload.timings.bptree_us);
 
-  resultEls.linearOps.textContent = `${formatNumber(count)}회`;
-  resultEls.btreeOps.textContent = `${estimateTreeHeight(count)}단계`;
-  resultEls.bptreeOps.textContent = `${estimateTreeHeight(count)}단계`;
+  resultEls.linearOps.textContent = formatOps(payload.linear_ops);
+  resultEls.btreeOps.textContent = formatOps(payload.btree_ops);
+  resultEls.bptreeOps.textContent = formatOps(payload.bptree_ops);
 
   resultEls.linearCaption.textContent = `ID #${formatNumber(targetId)}를 찾기 위해 선형 탐색 수행`;
   resultEls.btreeCaption.textContent = `ID #${formatNumber(targetId)}를 B 트리 분기로 탐색`;
@@ -285,6 +298,30 @@ function renderSingle(payload, benchmark) {
       </tr>
     `;
   }
+}
+
+function renderTop10Realtime(data) {
+  resultEls.linearTime.textContent = formatTimeUs(data.linear_time);
+  resultEls.btreeTime.textContent = formatTimeUs(data.btree_time);
+  resultEls.bptreeTime.textContent = formatTimeUs(data.bptree_time);
+
+  resultEls.linearOps.textContent = formatOps(data.linear_ops);
+  resultEls.btreeOps.textContent = formatOps(data.btree_ops);
+  resultEls.bptreeOps.textContent = formatOps(data.bptree_ops);
+
+  resultEls.linearCaption.textContent = "전체 배열을 순회해 승률 기준 TOP 10 집계";
+  resultEls.btreeCaption.textContent = "B 트리 리프를 모두 순회해 승률 기준 TOP 10 집계";
+  resultEls.bptreeCaption.textContent = "연결된 리프를 순회해 승률 기준 TOP 10 집계";
+
+  setProgressBars({
+    linear: data.linear_time,
+    btree: data.btree_time,
+    bptree: data.bptree_time,
+  });
+
+  renderTopPlayers(data.top_players || []);
+  summaryEls.lastSearch.textContent = "TOP 10 Ranking";
+  summaryEls.tableSubtitle.textContent = `실시간 TOP 10 랭킹 (${formatNumber(data.top_count || 0)}명)`;
 }
 
 async function runCurrentMode() {
@@ -316,25 +353,15 @@ async function runCurrentMode() {
         renderRangeRealtime(rangePayload, benchmark);
       }
     } else {
-      resultEls.linearTime.textContent = formatTimeUs(benchmark.single_search.linear.avg_us);
-      resultEls.btreeTime.textContent = formatTimeUs(benchmark.single_search.btree.avg_us);
-      resultEls.bptreeTime.textContent = formatTimeUs(benchmark.single_search.bptree.avg_us);
-
-      resultEls.linearOps.textContent = `${formatNumber(benchmark.meta.dataset_size)}회`;
-      resultEls.btreeOps.textContent = `${estimateTreeHeight(benchmark.meta.dataset_size)}단계`;
-      resultEls.bptreeOps.textContent = `${estimateTreeHeight(benchmark.meta.dataset_size)}단계`;
-
-      resultEls.linearCaption.textContent = "TOP 10 집계를 위해 전체 데이터를 순회";
-      resultEls.btreeCaption.textContent = "정렬된 구조를 바탕으로 상위권 정보를 확인";
-      resultEls.bptreeCaption.textContent = "리프 구간을 활용해 상위권 정보를 빠르게 확인";
-
-      setProgressBars({
-        linear: benchmark.single_search.linear.avg_us,
-        btree: benchmark.single_search.btree.avg_us,
-        bptree: benchmark.single_search.bptree.avg_us,
-      });
-
-      renderTopPlayers(benchmark.top_players);
+      runButton.textContent = "TOP 10 집계 중...";
+      const topPayload = await fetchJson(
+        buildUrl(`api/top?count=${count}`),
+        "TOP 10 랭킹 집계 실패"
+      );
+      if (!topPayload.ok) {
+        throw new Error(topPayload.message || "TOP 10 랭킹 집계 실패");
+      }
+      renderTop10Realtime(topPayload);
     }
   } catch (error) {
     window.alert(error.message || "실행 중 오류가 발생했습니다.");
@@ -377,7 +404,7 @@ rangeHiInput.addEventListener("keydown", (event) => {
 updateIdInputVisibility();
 updateSummary(datasetSize.value);
 renderRows([
-  { id: 91823, name: "ShadowBlade", score: 9980, tier: "챌린저", width: 120 },
-  { id: 445221, name: "NightFury", score: 9870, tier: "챌린저", width: 110 },
-  { id: 103942, name: "CrimsonAce", score: 9750, tier: "챌린저", width: 100 },
+  { id: 91823, nickname: "ShadowBlade", win_rate: 94.72, rank: "챌린저", width: 120 },
+  { id: 445221, nickname: "NightFury", win_rate: 92.48, rank: "챌린저", width: 110 },
+  { id: 103942, nickname: "CrimsonAce", win_rate: 91.15, rank: "챌린저", width: 100 },
 ]);

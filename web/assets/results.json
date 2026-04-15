@@ -1,33 +1,33 @@
 {
   "meta": {
-    "generated_at": "2026-04-15 17:25:43",
+    "generated_at": "2026-04-15 19:16:49",
     "dataset_size": 100000,
     "iterations": 5
   },
   "single_search": {
     "target_id": 50000,
-    "linear": {"avg_us": 21.600, "ops": 46296.296},
-    "btree": {"avg_us": 0.200, "ops": 5000000.000},
-    "bptree": {"avg_us": 0.000, "ops": 0.000}
+    "linear": {"avg_us": 24.800, "ops": 50000},
+    "btree": {"avg_us": 0.200, "ops": 55},
+    "bptree": {"avg_us": 0.200, "ops": 55}
   },
   "range_search": {
     "lo": 50000,
     "hi": 50999,
     "count": 1000,
-    "linear": {"avg_us": 42.800, "ops": 23364.486},
-    "btree": {"avg_us": 0.400, "ops": 2500000.000},
-    "bptree": {"avg_us": 0.800, "ops": 1250000.000}
+    "linear": {"avg_us": 49.400, "ops": 100000},
+    "btree": {"avg_us": 0.400, "ops": 1134},
+    "bptree": {"avg_us": 2.000, "ops": 1055}
   },
   "top_players": [
-    {"rank": 1, "id": 80028, "name": "StarlightX_27", "score": 5099, "tier": "Gold"},
-    {"rank": 2, "id": 67428, "name": "StarlightX_7427", "score": 5099, "tier": "Gold"},
-    {"rank": 3, "id": 71628, "name": "StarlightX_1627", "score": 5099, "tier": "Gold"},
-    {"rank": 4, "id": 88428, "name": "StarlightX_8427", "score": 5099, "tier": "Gold"},
-    {"rank": 5, "id": 33828, "name": "StarlightX_3827", "score": 5099, "tier": "Gold"},
-    {"rank": 6, "id": 29628, "name": "StarlightX_9627", "score": 5099, "tier": "Gold"},
-    {"rank": 7, "id": 17028, "name": "StarlightX_7027", "score": 5099, "tier": "Gold"},
-    {"rank": 8, "id": 59028, "name": "StarlightX_9027", "score": 5099, "tier": "Gold"},
-    {"rank": 9, "id": 8628, "name": "StarlightX_8627", "score": 5099, "tier": "Gold"},
-    {"rank": 10, "id": 84228, "name": "StarlightX_4227", "score": 5099, "tier": "Gold"}
+    {"id": 3164, "nickname": "StarlightX_3163", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 8864, "nickname": "StarlightX_8863", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 14564, "nickname": "StarlightX_4563", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 20264, "nickname": "StarlightX_263", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 25964, "nickname": "StarlightX_5963", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 31664, "nickname": "StarlightX_1663", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 37364, "nickname": "StarlightX_7363", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 43064, "nickname": "StarlightX_3063", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 48764, "nickname": "StarlightX_8763", "win_rate": 98.99, "rank": "챌린저"},
+    {"id": 54464, "nickname": "StarlightX_4463", "win_rate": 98.99, "rank": "챌린저"}
   ]
 }

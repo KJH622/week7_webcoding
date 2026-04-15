@@ -3,14 +3,14 @@
  *
  * 레코드 삽입 시 ID 자동 부여 후 B+ 트리 인덱스에 등록.
  * ID 기반 탐색은 B+ 트리를 사용하고,
- * 다른 필드(score 등) 기반 탐색은 선형 탐색을 수행한다.
+ * 다른 필드(win_rate 등) 기반 탐색은 선형 탐색을 수행한다.
  *
  * 사용법: ./bin/shell [csv_path]
  *
  * 지원 명령:
- *   INSERT <name> <score>   레코드 삽입 (ID 자동 부여)
+ *   INSERT <name> <win_rate> [rank]   레코드 삽입 (ID 자동 부여)
  *   SELECT ID <n>           B+ 트리로 ID 탐색
- *   SELECT SCORE <n>        선형 탐색으로 score >= n 인 레코드 수 조회
+ *   SELECT WINRATE <n>      선형 탐색으로 win_rate >= n 인 레코드 수 조회
  *   LOAD <n>                n개 레코드 랜덤 삽입
  *   LOADCSV [path]          CSV 파일 로드 (기본: data/players_1000000.csv)
  *   LIST [n]                처음 n개 레코드 출력 (기본 10)
@@ -66,12 +66,12 @@ static long long now_us(void) {
     return (long long)tv.tv_sec * 1000000LL + tv.tv_usec;
 }
 
-static const char *score_to_tier(int score) {
-    if (score >= 9500) return "Challenger";
-    if (score >= 8500) return "Diamond";
-    if (score >= 7000) return "Platinum";
-    if (score >= 5000) return "Gold";
-    return "Silver";
+static const char *win_rate_to_rank(double win_rate) {
+    if (win_rate >= 85.0) return "챌린저";
+    if (win_rate >= 75.0) return "다이아";
+    if (win_rate >= 65.0) return "플래티넘";
+    if (win_rate >= 55.0) return "골드";
+    return "실버";
 }
 
 static int starts_with(const char *s, const char *prefix) {
@@ -132,16 +132,16 @@ static void table_clear(Table *t) {
 }
 
 /* CSV/외부 데이터용 레코드 삽입 */
-static Player *table_insert_loaded(Table *t, int id, const char *name, int score, const char *tier) {
+static Player *table_insert_loaded(Table *t, int id, const char *name, double win_rate, const char *rank) {
     if (!table_ensure_capacity(t, t->count + 1)) return NULL;
 
     Player *p = &t->records[t->count];
     p->id = id;
     strncpy(p->name, name, 31);
     p->name[31] = '\0';
-    p->score = score;
-    strncpy(p->tier, tier && tier[0] ? tier : score_to_tier(score), 15);
-    p->tier[15] = '\0';
+    p->win_rate = win_rate;
+    strncpy(p->rank, rank && rank[0] ? rank : win_rate_to_rank(win_rate), sizeof(p->rank) - 1);
+    p->rank[sizeof(p->rank) - 1] = '\0';
 
     bptree_insert(t->index, p->id, p);
     t->count++;
@@ -150,21 +150,21 @@ static Player *table_insert_loaded(Table *t, int id, const char *name, int score
 }
 
 /* 레코드 삽입: ID 자동 부여 후 B+ 트리 인덱스 등록 */
-static Player *table_insert(Table *t, const char *name, int score) {
+static Player *table_insert(Table *t, const char *name, double win_rate, const char *rank) {
     int id = t->next_id;
-    Player *p = table_insert_loaded(t, id, name, score, score_to_tier(score));
+    Player *p = table_insert_loaded(t, id, name, win_rate, rank && rank[0] ? rank : win_rate_to_rank(win_rate));
     if (p) t->next_id = id + 1;
     return p;
 }
 
 /* ── 명령 구현 ─────────────────────────────────────── */
 
-/* INSERT <name> <score> */
-static void cmd_insert(Table *t, const char *name, int score) {
-    Player *p = table_insert(t, name, score);
+/* INSERT <name> <win_rate> [rank] */
+static void cmd_insert(Table *t, const char *name, double win_rate, const char *rank) {
+    Player *p = table_insert(t, name, win_rate, rank);
     if (p) {
-        printf("  INSERT OK — ID=%d  name=%s  score=%d  tier=%s\n",
-               p->id, p->name, p->score, p->tier);
+        printf("  INSERT OK — ID=%d  nickname=%s  win_rate=%.2f%%  rank=%s\n",
+               p->id, p->name, p->win_rate, p->rank);
     }
 }
 
@@ -175,23 +175,23 @@ static void cmd_select_id(Table *t, int id) {
     long long elapsed = now_us() - t0;
 
     if (p) {
-        printf("  [B+ 트리] ID=%d  name=%s  score=%d  tier=%s  (%lld μs)\n",
-               p->id, p->name, p->score, p->tier, elapsed);
+        printf("  [B+ 트리] ID=%d  nickname=%s  win_rate=%.2f%%  rank=%s  (%lld μs)\n",
+               p->id, p->name, p->win_rate, p->rank, elapsed);
     } else {
         printf("  [B+ 트리] ID=%d — 없음  (%lld μs)\n", id, elapsed);
     }
 }
 
-/* SELECT SCORE <n> — 선형 탐색 (score >= n) */
-static void cmd_select_score(Table *t, int min_score) {
+/* SELECT WINRATE <n> — 선형 탐색 (win_rate >= n) */
+static void cmd_select_win_rate(Table *t, double min_win_rate) {
     long long t0 = now_us();
     int count = 0;
     for (int i = 0; i < t->count; i++) {
-        if (t->records[i].score >= min_score) count++;
+        if (t->records[i].win_rate >= min_win_rate) count++;
     }
     long long elapsed = now_us() - t0;
-    printf("  [선형 탐색] score >= %d 인 레코드: %d건  (%lld μs)\n",
-           min_score, count, elapsed);
+    printf("  [선형 탐색] win_rate >= %.2f%% 인 레코드: %d건  (%lld μs)\n",
+           min_win_rate, count, elapsed);
 }
 
 /* LOAD <n> — n개 랜덤 레코드 일괄 삽입 */
@@ -200,9 +200,11 @@ static void cmd_load(Table *t, int n) {
     long long t0 = now_us();
     for (int i = 0; i < n; i++) {
         char name[32];
+        double win_rate;
         snprintf(name, sizeof(name), "%s_%d",
                  RAND_NAMES[rand() % RAND_NAME_COUNT], i % 9999);
-        table_insert(t, name, rand() % 10000);
+        win_rate = 42.0 + (rand() % 5700) / 100.0;
+        table_insert(t, name, win_rate, NULL);
     }
     long long elapsed = now_us() - t0;
     printf("  LOAD 완료 — %d건 삽입 (총 %d건)  %lld ms\n",
@@ -250,21 +252,22 @@ static void cmd_load_csv(Table *t, const char *path) {
     int loaded = 0;
 
     while (fgets(line, sizeof(line), fp)) {
-        int id, score;
+        int id;
         char name[32];
-        char tier[16];
+        double win_rate;
+        char rank[24];
 
         line_no++;
         if (line_no == 1 && starts_with(line, "id,")) continue;
 
-        if (sscanf(line, "%d,%31[^,],%d,%15[^,\r\n]", &id, name, &score, tier) != 4) {
+        if (sscanf(line, "%d,%31[^,],%lf,%23[^,\r\n]", &id, name, &win_rate, rank) != 4) {
             printf("  CSV 파싱 실패: %d번째 줄\n", line_no);
             table_clear(t);
             fclose(fp);
             return;
         }
 
-        if (!table_insert_loaded(t, id, name, score, tier)) {
+        if (!table_insert_loaded(t, id, name, win_rate, rank)) {
             fclose(fp);
             return;
         }
@@ -280,11 +283,13 @@ static void cmd_load_csv(Table *t, const char *path) {
 static void cmd_list(Table *t, int limit) {
     if (t->count == 0) { printf("  레코드 없음\n"); return; }
     if (limit <= 0 || limit > t->count) limit = t->count;
-    printf("  %-8s %-24s %-8s %s\n", "ID", "Name", "Score", "Tier");
-    printf("  %-8s %-24s %-8s %s\n", "--------", "------------------------", "--------", "----------");
+    printf("  %-8s %-24s %-10s %s\n", "ID", "Nickname", "Win Rate", "Rank");
+    printf("  %-8s %-24s %-10s %s\n", "--------", "------------------------", "----------", "----------");
     for (int i = 0; i < limit; i++) {
         Player *p = &t->records[i];
-        printf("  %-8d %-24s %-8d %s\n", p->id, p->name, p->score, p->tier);
+        char win_rate_text[16];
+        snprintf(win_rate_text, sizeof(win_rate_text), "%.2f%%", p->win_rate);
+        printf("  %-8d %-24s %-10s %s\n", p->id, p->name, win_rate_text, p->rank);
     }
 }
 
@@ -332,9 +337,9 @@ static void cmd_bench(Table *t) {
 /* HELP */
 static void cmd_help(void) {
     printf("  명령어 목록:\n");
-    printf("    INSERT <name> <score>   레코드 삽입 (ID 자동 부여)\n");
+    printf("    INSERT <name> <win_rate> [rank]   레코드 삽입 (ID 자동 부여)\n");
     printf("    SELECT ID <n>           B+ 트리로 ID 탐색\n");
-    printf("    SELECT SCORE <n>        선형 탐색 (score >= n)\n");
+    printf("    SELECT WINRATE <n>      선형 탐색 (win_rate >= n)\n");
     printf("    LOAD <n>                n개 랜덤 레코드 일괄 삽입\n");
     printf("    LOADCSV [path]          CSV 파일 로드 (기본: %s)\n", DEFAULT_CSV_PATH);
     printf("    LIST [n]                처음 n개 레코드 출력 (기본 10)\n");
@@ -388,18 +393,25 @@ int main(int argc, char *argv[]) {
             cmd_count(t);
 
         } else if (strcmp(cmd, "INSERT") == 0) {
-            if (argc < 3) { printf("  사용법: INSERT <name> <score>\n"); continue; }
-            /* arg1=name, arg2=score (대소문자 변환 전 원본 필요) */
-            char name[64], score_s[64];
-            sscanf(line, "%*s %63s %63s", name, score_s);
-            cmd_insert(t, name, atoi(score_s));
+            if (argc < 3) { printf("  사용법: INSERT <name> <win_rate> [rank]\n"); continue; }
+            {
+                char name[64], win_rate_s[64], rank[64] = "";
+                double win_rate;
+
+                if (sscanf(line, "%*s %63s %63s %63s", name, win_rate_s, rank) < 2) {
+                    printf("  사용법: INSERT <name> <win_rate> [rank]\n");
+                    continue;
+                }
+                win_rate = atof(win_rate_s);
+                cmd_insert(t, name, win_rate, rank);
+            }
 
         } else if (strcmp(cmd, "SELECT") == 0) {
-            if (argc < 3) { printf("  사용법: SELECT ID <n>  또는  SELECT SCORE <n>\n"); continue; }
+            if (argc < 3) { printf("  사용법: SELECT ID <n>  또는  SELECT WINRATE <n>\n"); continue; }
             if (strcmp(arg1, "ID") == 0) {
                 cmd_select_id(t, atoi(arg2));
-            } else if (strcmp(arg1, "SCORE") == 0) {
-                cmd_select_score(t, atoi(arg2));
+            } else if (strcmp(arg1, "WINRATE") == 0) {
+                cmd_select_win_rate(t, atof(arg2));
             } else {
                 printf("  알 수 없는 SELECT 대상: %s\n", arg1);
             }

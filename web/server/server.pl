@@ -350,6 +350,60 @@ sub handle_range {
     return send_json($client, '200 OK', $payload);
 }
 
+sub handle_top {
+    my ($client, $query) = @_;
+    my %params = parse_query_string($query);
+    my $count  = $params{count} // 1000000;
+    my $output;
+    my $payload;
+
+    unless ($count =~ /^\d+$/ && $count > 0) {
+        return send_json($client, '400 Bad Request', {
+            ok => JSON::PP::false,
+            message => 'count 값이 올바르지 않습니다.'
+        });
+    }
+
+    my $csv_path = csv_path_for_count($count);
+    if (!-f $csv_path) {
+        return send_json($client, '404 Not Found', {
+            ok => JSON::PP::false,
+            message => "prebuilt csv file not found: $csv_path"
+        });
+    }
+
+    $current_csv_path = $csv_path;
+    my ($ok, $engine_error) = ensure_query_engine($current_csv_path);
+    if (!$ok) {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => $engine_error
+        });
+    }
+
+    print {$engine_in} "top\n";
+    $output = <$engine_out>;
+    if (!defined $output) {
+        local $/;
+        my $stderr_text = $engine_err ? (<$engine_err> // q{}) : q{};
+        stop_query_engine();
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => "query server connection closed unexpectedly: $stderr_text"
+        });
+    }
+
+    eval { $payload = decode_json($output); 1 } or do {
+        return send_json($client, '500 Internal Server Error', {
+            ok => JSON::PP::false,
+            message => 'top ranking returned invalid JSON',
+            error => $output
+        });
+    };
+
+    return send_json($client, '200 OK', $payload);
+}
+
 sub serve_static {
     my ($client, $path) = @_;
     my $relative = $path eq '/' ? 'index.html' : substr($path, 1);
@@ -400,6 +454,8 @@ while (my $client = $server->accept()) {
         handle_search($client, $query);
     } elsif ($path eq '/api/range') {
         handle_range($client, $query);
+    } elsif ($path eq '/api/top') {
+        handle_top($client, $query);
     } else {
         serve_static($client, $path);
     }

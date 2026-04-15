@@ -34,9 +34,21 @@ static Player *make_table(int n) {
     if (!table) return NULL;
     srand(42);
     for (int i = 0; i < n; i++) {
-        table[i].id    = i + 1;
+        double win_rate;
+
+        table[i].id = i + 1;
         snprintf(table[i].name, 32, "Player_%d", i);
-        table[i].score = rand() % 10000;
+        win_rate = 42.0 + (rand() % 5700) / 100.0;
+        table[i].win_rate = win_rate;
+        snprintf(
+            table[i].rank,
+            sizeof(table[i].rank),
+            "%s",
+            win_rate >= 85.0 ? "챌린저" :
+            win_rate >= 75.0 ? "다이아" :
+            win_rate >= 65.0 ? "플래티넘" :
+            win_rate >= 55.0 ? "골드" : "실버"
+        );
     }
     return table;
 }
