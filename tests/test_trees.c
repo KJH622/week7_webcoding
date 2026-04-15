@@ -359,6 +359,9 @@ static void test_bench_json_escaping(void) {
     CHECK(output && strstr(output, "\"nickname\": \"Slash\\\\Name\"") != NULL, "bench escapes backslashes in top player nickname");
     CHECK(output && strstr(output, "\"rank\": \"Dia\\\"mond\"") != NULL, "bench escapes quotes in top player rank");
     CHECK(output && strstr(output, "\"rank\": \"Dia\"mond\"") == NULL, "bench avoids raw quote breakage");
+    CHECK(output && strstr(output, "\"name_bridge_search\": {") != NULL, "bench writes the name bridge benchmark block");
+    CHECK(output && strstr(output, "\"target_name\": \"A\\\"B\"") != NULL, "bench escapes quotes in name bridge target");
+    CHECK(output && strstr(output, "\"resolved_id\": 1") != NULL, "bench resolves the name bridge target back to an id");
 
     free(output);
     remove(csv_path);
@@ -454,6 +457,161 @@ static void test_query_server_range_pagination(void) {
     remove(output_path);
 }
 
+static void test_shell_select_id_uses_bptree(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[384];
+    char *output = NULL;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[shell SELECT ID routing]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "shell_select_id_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "shell_select_id_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'SELECT ID 15\\nQUIT\\n' | ./bin/shell %s > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    CHECK(wrote_fixture, "fixture csv created for shell SELECT ID");
+    CHECK(ran_command, "shell SELECT ID command runs against fixture");
+    CHECK(output && strstr(output, "[B+ 트리] ID=15  nickname=Player_15") != NULL, "shell routes SELECT ID through the B+ tree path");
+    CHECK(output && strstr(output, "[선형 탐색]") == NULL, "shell SELECT ID avoids the linear-search branch");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
+static void test_shell_select_name_uses_linear_search(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[384];
+    char *output = NULL;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[shell SELECT NAME routing]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "shell_select_name_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "shell_select_name_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'SELECT NAME Player_15\\nQUIT\\n' | ./bin/shell %s > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    CHECK(wrote_fixture, "fixture csv created for shell SELECT NAME");
+    CHECK(ran_command, "shell SELECT NAME command runs against fixture");
+    CHECK(
+        output && strstr(output, "[선형 탐색] nickname=Player_15  -> ID=15") != NULL,
+        "shell routes SELECT NAME through the linear-search path"
+    );
+    CHECK(output && strstr(output, "[B+ 트리]") == NULL, "shell SELECT NAME avoids the B+ tree branch");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
+static void test_shell_select_winrate_uses_linear_search(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[384];
+    char *output = NULL;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[shell SELECT WINRATE routing]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "shell_select_winrate_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "shell_select_winrate_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'SELECT WINRATE 58\\nQUIT\\n' | ./bin/shell %s > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    CHECK(wrote_fixture, "fixture csv created for shell SELECT WINRATE");
+    CHECK(ran_command, "shell SELECT WINRATE command runs against fixture");
+    CHECK(
+        output && strstr(output, "[선형 탐색] win_rate >= 58.00% 인 레코드: 6건") != NULL,
+        "shell routes SELECT WINRATE through the linear-search path"
+    );
+    CHECK(output && strstr(output, "[B+ 트리]") == NULL, "shell SELECT WINRATE avoids the B+ tree branch");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
+static void test_shell_loadcsv_rebuilds_select_index(void) {
+    char csv_path[128];
+    char output_path[128];
+    char command[512];
+    char *output = NULL;
+    int wrote_fixture;
+    int ran_command = 0;
+
+    printf("\n[shell LOADCSV routing]\n");
+    make_temp_path(csv_path, sizeof(csv_path), "shell_loadcsv_fixture.csv");
+    make_temp_path(output_path, sizeof(output_path), "shell_loadcsv_output.log");
+
+    wrote_fixture = write_range_fixture_csv(csv_path);
+    if (wrote_fixture) {
+        snprintf(
+            command,
+            sizeof(command),
+            "printf 'COUNT\\nLOADCSV %s\\nSELECT ID 24\\nQUIT\\n' | ./bin/shell > %s",
+            csv_path,
+            output_path
+        );
+        ran_command = run_command_ok(command);
+        if (ran_command) {
+            output = read_text_file(output_path);
+        }
+    }
+
+    CHECK(wrote_fixture, "fixture csv created for shell LOADCSV");
+    CHECK(ran_command, "shell LOADCSV command runs against fixture");
+    CHECK(output && strstr(output, "총 레코드 수: 0") != NULL, "shell starts empty before LOADCSV");
+    CHECK(output && strstr(output, "LOADCSV 완료 — 30건 로드") != NULL, "shell LOADCSV populates the table from the fixture");
+    CHECK(output && strstr(output, "[B+ 트리] ID=24  nickname=Player_24") != NULL, "shell LOADCSV rebuilds the B+ tree path for SELECT ID");
+
+    free(output);
+    remove(csv_path);
+    remove(output_path);
+}
+
 static void test_bptree_single_search(void) {
     Player players[3];
     BPTree *tree = bptree_create();
@@ -538,6 +696,10 @@ int main(void) {
     test_bench_json_escaping();
     test_query_server_top10_realtime();
     test_query_server_range_pagination();
+    test_shell_select_id_uses_bptree();
+    test_shell_select_name_uses_linear_search();
+    test_shell_select_winrate_uses_linear_search();
+    test_shell_loadcsv_rebuilds_select_index();
     test_bptree_single_search();
     test_bptree_range_search();
     test_bptree_split_handling();
