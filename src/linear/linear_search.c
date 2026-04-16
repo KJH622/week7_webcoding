@@ -1,19 +1,40 @@
 #include "linear_search.h"
+#include <string.h>
 #include <stddef.h>
+
+/* benchmark.c에서 정의된 전역 연산 횟수 카운터 */
+extern long long g_op_count;
 
 Player *linear_search(Player *table, int size, int target_id) {
     for (int i = 0; i < size; i++) {
+        g_op_count++;                      /* 비교 1회 */
         if (table[i].id == target_id)
             return &table[i];
     }
     return NULL;
 }
 
+Player *linear_search_name(Player *table, int size, const char *target_name) {
+    if (!target_name) {
+        return NULL;
+    }
+
+    for (int i = 0; i < size; i++) {
+        g_op_count++;                      /* 문자열 비교 1회 */
+        if (strcmp(table[i].name, target_name) == 0)
+            return &table[i];
+    }
+    return NULL;
+}
+
+/* 전제: table은 id 오름차순으로 정렬되어 있어야 함 (datagen 보장).
+ * id > hi 시점에 조기 탈출하여 O(hi) 비교로 단축. */
 int linear_range(Player *table, int size, int lo, int hi) {
     int count = 0;
     for (int i = 0; i < size; i++) {
-        if (table[i].id >= lo && table[i].id <= hi)
-            count++;
+        g_op_count++;                      /* 비교 1회 */
+        if (table[i].id > hi) break;       /* 정렬 보장 → 이후는 모두 범위 초과 */
+        if (table[i].id >= lo) count++;
     }
     return count;
 }
